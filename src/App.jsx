@@ -785,17 +785,46 @@ const [isMobile, setIsMobile] = useState(window.innerWidth <= 600);
           key={c.id}
           style={{ border: "1px solid #ccc", padding: 15, marginBottom: 15 }}
         >
-          {c.front_image && (
-            <img
-              src={c.front_image}
-              alt="front"
-              style={{ width: isMobile ? "100%" : 140, maxWidth: 220, marginRight: isMobile ? 0 : 10, marginBottom: 10 }}
-            />
-          )}
+          <div
+            style={{
+              display: "flex",
+              gap: 10,
+              alignItems: "flex-start",
+              marginBottom: 10,
+            }}
+          >
+            {c.front_image && (
+              <div style={{ flex: 1 }}>
+                <div style={{ fontSize: 12, marginBottom: 4 }}>Front</div>
+                <img
+                  src={c.front_image}
+                  alt="front"
+                  style={{
+                    width: "100%",
+                    maxWidth: 220,
+                    height: "auto",
+                    display: "block",
+                  }}
+                />
+              </div>
+            )}
 
-          {c.back_image && (
-            <img src={c.back_image} alt="back" style={{ width: isMobile ? "100%" : 140, maxWidth: 220, marginBottom: 10 }} />
-          )}
+            {c.back_image && (
+              <div style={{ flex: 1 }}>
+                <div style={{ fontSize: 12, marginBottom: 4 }}>Back</div>
+                <img
+                  src={c.back_image}
+                  alt="back"
+                  style={{
+                    width: "100%",
+                    maxWidth: 220,
+                    height: "auto",
+                    display: "block",
+                  }}
+                />
+              </div>
+            )}
+          </div>
 
           <h3>{c.name}</h3>
           <div>Inventory ID: {c.inventory_id || "N/A"}</div>
