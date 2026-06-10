@@ -267,7 +267,7 @@ export default function App() {
 
       {tab === "stockIn" && (
         <>
-          <h2>{editingId ? "Edit Card" : "入库 / Add Card"}</h2>
+          <h2>{editingId ? "Edit Card" : "Add Card"}</h2>
 
           <form onSubmit={saveCard} style={{ marginBottom: 30 }}>
             <input placeholder="Character Name" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
@@ -370,7 +370,7 @@ export default function App() {
             <>
               <button onClick={() => startEdit(c)}>Edit</button>
               <button onClick={() => markAsSold(c)} style={{ marginLeft: 10 }}>
-                出库 / Mark Sold
+                Mark Sold
               </button>
             </>
           )}
