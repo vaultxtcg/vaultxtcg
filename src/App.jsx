@@ -246,13 +246,23 @@ export default function App() {
       </div>
 
       <div style={{ marginBottom: 20 }}>
-        <button onClick={() => setTab("inventory")}>查看库存</button>
-        <button onClick={() => setTab("stockIn")} style={{ marginLeft: 10 }}>
-          入库
-        </button>
-        <button onClick={() => setTab("sold")} style={{ marginLeft: 10 }}>
-          出库记录
-        </button>
+      <button onClick={() => setTab("inventory")}>
+  Inventory
+</button>
+
+<button
+  onClick={() => setTab("stockIn")}
+  style={{ marginLeft: 10 }}
+>
+  Stock In
+</button>
+
+<button
+  onClick={() => setTab("sold")}
+  style={{ marginLeft: 10 }}
+>
+  Sales History
+</button>
       </div>
 
       {tab === "stockIn" && (
