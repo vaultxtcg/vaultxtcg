@@ -23,6 +23,7 @@ export default function App() {
   const [cards, setCards] = useState([]);
   const [search, setSearch] = useState("");
   const [form, setForm] = useState(emptyForm);
+  const [editingId, setEditingId] = useState(null);
   const [frontFile, setFrontFile] = useState(null);
   const [backFile, setBackFile] = useState(null);
 
@@ -65,7 +66,7 @@ export default function App() {
     return data.publicUrl;
   };
 
-  const addCard = async (e) => {
+  const saveCard = async (e) => {
     e.preventDefault();
 
     if (!form.name) {
@@ -73,46 +74,91 @@ export default function App() {
       return;
     }
 
-    const { data, error } = await supabase
-      .from("cards")
-      .insert([
-        {
-          ...form,
-          cost: Number(form.cost || 0),
-          price: Number(form.price || 0),
-        },
-      ])
-      .select()
-      .single();
+    const payload = {
+      ...form,
+      cost: Number(form.cost || 0),
+      price: Number(form.price || 0),
+    };
 
-    if (error) {
-      alert(error.message);
-      return;
+    let cardId = editingId;
+
+    if (editingId) {
+      const { error } = await supabase
+        .from("cards")
+        .update(payload)
+        .eq("id", editingId);
+
+      if (error) {
+        alert(error.message);
+        return;
+      }
+    } else {
+      const { data, error } = await supabase
+        .from("cards")
+        .insert([payload])
+        .select()
+        .single();
+
+      if (error) {
+        alert(error.message);
+        return;
+      }
+
+      cardId = data.id;
     }
 
-    const frontUrl = await uploadFile(data.id, frontFile, "front");
-    const backUrl = await uploadFile(data.id, backFile, "back");
+    const frontUrl = await uploadFile(cardId, frontFile, "front");
+    const backUrl = await uploadFile(cardId, backFile, "back");
 
     const updates = {};
     if (frontUrl) updates.front_image = frontUrl;
     if (backUrl) updates.back_image = backUrl;
 
     if (Object.keys(updates).length > 0) {
-      const { error: updateError } = await supabase
+      const { error } = await supabase
         .from("cards")
         .update(updates)
-        .eq("id", data.id);
+        .eq("id", cardId);
 
-      if (updateError) {
-        alert(updateError.message);
+      if (error) {
+        alert(error.message);
         return;
       }
     }
 
     setForm(emptyForm);
+    setEditingId(null);
     setFrontFile(null);
     setBackFile(null);
     loadCards();
+  };
+
+  const startEdit = (card) => {
+    setEditingId(card.id);
+    setForm({
+      name: card.name || "",
+      card_number: card.card_number || "",
+      card_set: card.card_set || "",
+      language: card.language || "",
+      cost: card.cost || "",
+      price: card.price || "",
+      purchase_date: card.purchase_date || "",
+      payment_method: card.payment_method || "",
+      seller_name: card.seller_name || "",
+      seller_tel: card.seller_tel || "",
+      storage_location: card.storage_location || "",
+      status: card.status || "Available",
+      notes: card.notes || "",
+    });
+
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  };
+
+  const cancelEdit = () => {
+    setEditingId(null);
+    setForm(emptyForm);
+    setFrontFile(null);
+    setBackFile(null);
   };
 
   const deleteCard = async (id) => {
@@ -146,7 +192,9 @@ export default function App() {
         {totalValue - totalCost}
       </div>
 
-      <form onSubmit={addCard} style={{ marginBottom: 30 }}>
+      <h2>{editingId ? "Edit Card" : "Add Card"}</h2>
+
+      <form onSubmit={saveCard} style={{ marginBottom: 30 }}>
         <input placeholder="Card Name" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
         <input placeholder="Card Number" value={form.card_number} onChange={(e) => setForm({ ...form, card_number: e.target.value })} />
         <input placeholder="Set" value={form.card_set} onChange={(e) => setForm({ ...form, card_set: e.target.value })} />
@@ -175,7 +223,13 @@ export default function App() {
           Back Image: <input type="file" accept="image/*" onChange={(e) => setBackFile(e.target.files[0])} />
         </div>
 
-        <button type="submit">Save Card</button>
+        <button type="submit">{editingId ? "Update Card" : "Save Card"}</button>
+
+        {editingId && (
+          <button type="button" onClick={cancelEdit} style={{ marginLeft: 10 }}>
+            Cancel Edit
+          </button>
+        )}
       </form>
 
       <input
@@ -204,7 +258,10 @@ export default function App() {
           <div>Status: {c.status}</div>
           <div>Notes: {c.notes}</div>
 
-          <button onClick={() => deleteCard(c.id)}>Delete</button>
+          <button onClick={() => startEdit(c)}>Edit</button>
+          <button onClick={() => deleteCard(c.id)} style={{ marginLeft: 10 }}>
+            Delete
+          </button>
         </div>
       ))}
     </div>
