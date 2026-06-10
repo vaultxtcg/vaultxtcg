@@ -236,7 +236,7 @@ const [authPassword, setAuthPassword] = useState("");
       }
     }
   
-    setSuccessMessage("Card saved successfully!");
+    alert("Card saved successfully!");
   
     setForm(emptyForm);
     setEditingId(null);
@@ -337,6 +337,86 @@ const [authPassword, setAuthPassword] = useState("");
     loadActivityLogs();
 
     loadCards();
+  };
+
+  const downloadCSV = (filename, headers, rows) => {
+    const csvRows = [
+      headers.join(","),
+      ...rows.map((row) =>
+        headers
+          .map((key) => `"${String(row[key] ?? "").replace(/"/g, '""')}"`)
+          .join(",")
+      ),
+    ];
+  
+    const csv = csvRows.join("\n");
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+  
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = filename;
+    link.click();
+  
+    URL.revokeObjectURL(url);
+  };
+  
+  const exportInventoryCSV = () => {
+    const headers = [
+      "inventory_id",
+      "name",
+      "category",
+      "card_number",
+      "language",
+      "cost",
+      "price",
+      "status",
+      "purchase_date",
+      "payment_method",
+      "seller_name",
+      "storage_location",
+      "created_by",
+      "updated_by",
+    ];
+  
+    downloadCSV(
+      "vaultxtcg_inventory.csv",
+      headers,
+      cards.filter((c) => c.status !== "Sold")
+    );
+  };
+  
+  const exportSalesCSV = () => {
+    const headers = [
+      "inventory_id",
+      "name",
+      "category",
+      "card_number",
+      "cost",
+      "sold_price",
+      "sold_date",
+      "receiving_method",
+      "sold_by",
+    ];
+  
+    downloadCSV(
+      "vaultxtcg_sales.csv",
+      headers,
+      cards.filter((c) => c.status === "Sold")
+    );
+  };
+  
+  const exportActivityLogCSV = () => {
+    const headers = [
+      "created_at",
+      "user_email",
+      "action",
+      "inventory_id",
+      "card_number",
+      "notes",
+    ];
+  
+    downloadCSV("vaultxtcg_activity_log.csv", headers, activityLogs);
   };
 
   const filtered = cards.filter((c) => {
@@ -449,6 +529,17 @@ const [authPassword, setAuthPassword] = useState("");
 >
   Activity Logs
 </button>
+<button onClick={exportInventoryCSV} style={{ marginLeft: 10 }}>
+  Export Inventory CSV
+</button>
+
+<button onClick={exportSalesCSV} style={{ marginLeft: 10 }}>
+  Export Sales CSV
+</button>
+
+<button onClick={exportActivityLogCSV} style={{ marginLeft: 10 }}>
+  Export Activity Log CSV
+</button>
 
         <button onClick={() => setTab("sold")} style={{ marginLeft: 10 }}>
           Sales History
@@ -459,147 +550,162 @@ const [authPassword, setAuthPassword] = useState("");
         <>
           <h2>{editingId ? "Edit Card" : "Add Card"}</h2>
 
-          <form onSubmit={saveCard} style={{ marginBottom: 30 }}>
-            <input
-              placeholder="Character Name"
-              value={form.name}
-              onChange={(e) =>
-                setForm({ ...form, name: e.target.value })
-              }
-            />
+<form
+  onSubmit={saveCard}
+  style={{
+    marginBottom: 30,
+    maxWidth: 720,
+  }}
+>
+  <div style={{ marginBottom: 20 }}>
+    <h3>Basic Info</h3>
 
-            <select
-              value={form.category}
-              onChange={(e) =>
-                setForm({ ...form, category: e.target.value })
-              }
-            >
-              <option value="Pokemon">Pokemon</option>
-              <option value="One Piece">One Piece</option>
-              <option value="Others">Others</option>
-            </select>
+    <input
+      placeholder="Character Name"
+      value={form.name}
+      onChange={(e) => setForm({ ...form, name: e.target.value })}
+      style={{ width: "100%", marginBottom: 10 }}
+    />
 
-            <input
-              placeholder="Card Number / ID e.g. OP13-108"
-              value={form.card_number}
-              onChange={(e) =>
-                setForm({ ...form, card_number: e.target.value })
-              }
-            />
+    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+      <select
+        value={form.category}
+        onChange={(e) => setForm({ ...form, category: e.target.value })}
+      >
+        <option value="Pokemon">Pokemon</option>
+        <option value="One Piece">One Piece</option>
+        <option value="Others">Others</option>
+      </select>
 
-            <select
-              value={form.language}
-              onChange={(e) =>
-                setForm({ ...form, language: e.target.value })
-              }
-            >
-              <option value="English">English</option>
-              <option value="简中">简中</option>
-              <option value="繁中">繁中</option>
-              <option value="Others">Others</option>
-            </select>
+      <select
+        value={form.language}
+        onChange={(e) => setForm({ ...form, language: e.target.value })}
+      >
+        <option value="English">English</option>
+        <option value="简中">简中</option>
+        <option value="繁中">繁中</option>
+        <option value="Others">Others</option>
+      </select>
+    </div>
 
-            <input
-              placeholder="Cost"
-              value={form.cost}
-              onChange={(e) => setForm({ ...form, cost: e.target.value })}
-            />
+    <input
+      placeholder="Card Number / ID e.g. OP13-108"
+      value={form.card_number}
+      onChange={(e) => setForm({ ...form, card_number: e.target.value })}
+      style={{ width: "100%", marginTop: 10 }}
+    />
+  </div>
 
-            <input
-              placeholder="Price"
-              value={form.price}
-              onChange={(e) => setForm({ ...form, price: e.target.value })}
-            />
+  <div style={{ marginBottom: 20 }}>
+    <h3>Purchase Info</h3>
 
-            <input
-              type="date"
-              value={form.purchase_date}
-              onChange={(e) =>
-                setForm({ ...form, purchase_date: e.target.value })
-              }
-            />
+    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+      <input
+        placeholder="Cost"
+        value={form.cost}
+        onChange={(e) => setForm({ ...form, cost: e.target.value })}
+      />
 
-            <input
-              placeholder="Payment Method"
-              value={form.payment_method}
-              onChange={(e) =>
-                setForm({ ...form, payment_method: e.target.value })
-              }
-            />
+      <input
+        placeholder="Price"
+        value={form.price}
+        onChange={(e) => setForm({ ...form, price: e.target.value })}
+      />
+    </div>
 
-            <input
-              placeholder="Seller Name"
-              value={form.seller_name}
-              onChange={(e) =>
-                setForm({ ...form, seller_name: e.target.value })
-              }
-            />
+    <input
+      type="date"
+      value={form.purchase_date}
+      onChange={(e) => setForm({ ...form, purchase_date: e.target.value })}
+      style={{ width: "100%", marginTop: 10 }}
+    />
 
-            <input
-              placeholder="Seller Tel"
-              value={form.seller_tel}
-              onChange={(e) =>
-                setForm({ ...form, seller_tel: e.target.value })
-              }
-            />
+    <input
+      placeholder="Payment Method"
+      value={form.payment_method}
+      onChange={(e) => setForm({ ...form, payment_method: e.target.value })}
+      style={{ width: "100%", marginTop: 10 }}
+    />
+  </div>
 
-            <input
-              placeholder="Storage Location"
-              value={form.storage_location}
-              onChange={(e) =>
-                setForm({ ...form, storage_location: e.target.value })
-              }
-            />
+  <div style={{ marginBottom: 20 }}>
+    <h3>Seller Info</h3>
 
-            <select
-              value={form.status}
-              onChange={(e) =>
-                setForm({ ...form, status: e.target.value })
-              }
-            >
-              <option value="Available">Available</option>
-              <option value="Hold">Hold</option>
-              <option value="Others">Others</option>
-            </select>
+    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+      <input
+        placeholder="Seller Name"
+        value={form.seller_name}
+        onChange={(e) => setForm({ ...form, seller_name: e.target.value })}
+      />
 
-            <textarea
-              placeholder="Notes"
-              value={form.notes}
-              onChange={(e) => setForm({ ...form, notes: e.target.value })}
-            />
+      <input
+        placeholder="Seller Tel"
+        value={form.seller_tel}
+        onChange={(e) => setForm({ ...form, seller_tel: e.target.value })}
+      />
+    </div>
+  </div>
 
-            <div>
-              Front Image:{" "}
-              <input
-                type="file"
-                accept="image/*"
-                onChange={(e) => setFrontFile(e.target.files[0])}
-              />
-            </div>
+  <div style={{ marginBottom: 20 }}>
+    <h3>Storage</h3>
 
-            <div>
-              Back Image:{" "}
-              <input
-                type="file"
-                accept="image/*"
-                onChange={(e) => setBackFile(e.target.files[0])}
-              />
-            </div>
+    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+      <input
+        placeholder="Storage Location"
+        value={form.storage_location}
+        onChange={(e) => setForm({ ...form, storage_location: e.target.value })}
+      />
 
-            <button type="submit">
-              {editingId ? "Update Card" : "Save Card"}
-            </button>
+      <select
+        value={form.status}
+        onChange={(e) => setForm({ ...form, status: e.target.value })}
+      >
+        <option value="Available">Available</option>
+        <option value="Hold">Hold</option>
+        <option value="Others">Others</option>
+      </select>
+    </div>
 
-            {editingId && (
-              <button
-                type="button"
-                onClick={cancelEdit}
-                style={{ marginLeft: 10 }}
-              >
-                Cancel Edit
-              </button>
-            )}
-          </form>
+    <textarea
+      placeholder="Notes"
+      value={form.notes}
+      onChange={(e) => setForm({ ...form, notes: e.target.value })}
+      style={{ width: "100%", marginTop: 10, minHeight: 80 }}
+    />
+  </div>
+
+  <div style={{ marginBottom: 20 }}>
+    <h3>Images</h3>
+
+    <div style={{ marginBottom: 10 }}>
+      Front Image:{" "}
+      <input
+        type="file"
+        accept="image/*"
+        onChange={(e) => setFrontFile(e.target.files[0])}
+      />
+    </div>
+
+    <div>
+      Back Image:{" "}
+      <input
+        type="file"
+        accept="image/*"
+        onChange={(e) => setBackFile(e.target.files[0])}
+      />
+    </div>
+  </div>
+
+  <button type="submit">
+    {editingId ? "Update Card" : "Save Card"}
+  </button>
+
+  {editingId && (
+    <button type="button" onClick={cancelEdit} style={{ marginLeft: 10 }}>
+      Cancel Edit
+    </button>
+  )}
+</form>
         </>
       )}
             {tab === "activityLogs" && (
