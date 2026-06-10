@@ -21,6 +21,7 @@ const emptyForm = {
 
 export default function App() {
   const [cards, setCards] = useState([]);
+  const [activityLogs, setActivityLogs] = useState([]);
   const [tab, setTab] = useState("inventory");
   const [search, setSearch] = useState("");
   const [form, setForm] = useState(emptyForm);
@@ -45,8 +46,22 @@ const [authPassword, setAuthPassword] = useState("");
 
     setCards(data || []);
   };
+  const loadActivityLogs = async () => {
+    const { data, error } = await supabase
+      .from("activity_log")
+      .select("*")
+      .order("created_at", { ascending: false });
+  
+    if (error) {
+      alert(error.message);
+      return;
+    }
+  
+    setActivityLogs(data || []);
+  };
 
   useEffect(() => {
+    loadActivityLogs();
     loadCards();
   }, []);
 
@@ -134,94 +149,101 @@ const [authPassword, setAuthPassword] = useState("");
 
   const saveCard = async (e) => {
     e.preventDefault();
-
+  
     if (!form.name) {
       alert("Character Name is required");
       return;
     }
-
+  
     const { id, ...formWithoutId } = form;
-
+  
     const payload = {
       ...formWithoutId,
       cost: Number(form.cost || 0),
       price: Number(form.price || 0),
-      created_by: user?.email,
     };
-
+  
     let cardId = editingId;
-
+  
     if (editingId) {
       payload.updated_by = user?.email;
-
+  
+      const currentCard = cards.find((c) => c.id === editingId);
+  
       const { error } = await supabase
         .from("cards")
         .update(payload)
         .eq("id", editingId);
-
+  
       if (error) {
         alert(error.message);
         return;
       }
+  
+      await addActivityLog({
+        action: "EDIT",
+        inventory_id: currentCard?.inventory_id,
+        card_number: payload.card_number,
+        notes: "Card information updated",
+      });
     } else {
+      payload.created_by = user?.email;
+  
       const { data, error } = await supabase
         .from("cards")
         .insert([payload])
         .select()
         .single();
-
+  
       if (error) {
         alert(error.message);
         return;
       }
+  
       cardId = data.id;
-
+  
       const inventoryId = `VX-${String(data.id).padStart(6, "0")}`;
-
+  
       await supabase
-      .from("cards")
-      .update({ inventory_id: inventoryId })
-      .eq("id", data.id);
-    
-      await supabase
-      .from("cards")
-      .update({ inventory_id: inventoryId })
-      .eq("id", data.id);
-    
-    await addActivityLog({
-      action: "ADD",
-      inventory_id: inventoryId,
-      card_number: payload.card_number,
-      notes: "Added card to inventory",
-    });
+        .from("cards")
+        .update({ inventory_id: inventoryId })
+        .eq("id", data.id);
+  
+      await addActivityLog({
+        action: "ADD",
+        inventory_id: inventoryId,
+        card_number: payload.card_number,
+        notes: "Added card to inventory",
+      });
     }
-
+  
     const frontUrl = await uploadFile(cardId, frontFile, "front");
     const backUrl = await uploadFile(cardId, backFile, "back");
-
+  
     const updates = {};
     if (frontUrl) updates.front_image = frontUrl;
     if (backUrl) updates.back_image = backUrl;
-
+  
     if (Object.keys(updates).length > 0) {
       const { error } = await supabase
         .from("cards")
         .update(updates)
         .eq("id", cardId);
-
+  
       if (error) {
         alert(error.message);
         return;
       }
     }
-
+  
     setSuccessMessage("Card saved successfully!");
-
+  
     setForm(emptyForm);
     setEditingId(null);
     setFrontFile(null);
     setBackFile(null);
     loadCards();
+    loadActivityLogs();
     setTab("inventory");
   };
 
@@ -283,13 +305,21 @@ const [authPassword, setAuthPassword] = useState("");
       alert(error.message);
       return;
     }
-
+    
+    await addActivityLog({
+      action: "SOLD",
+      inventory_id: card.inventory_id,
+      card_number: card.card_number,
+      notes: `Sold for $${sold_price} via ${receiving_method}`,
+    });
+    
     loadCards();
   };
 
   const deleteCard = async (id) => {
     const ok = confirm("Delete this card?");
     if (!ok) return;
+    const card = cards.find((c) => c.id === id);
 
     const { error } = await supabase.from("cards").delete().eq("id", id);
 
@@ -297,6 +327,14 @@ const [authPassword, setAuthPassword] = useState("");
       alert(error.message);
       return;
     }
+    await addActivityLog({
+      action: "DELETE",
+      inventory_id: card?.inventory_id,
+      card_number: card?.card_number,
+      notes: "Card deleted from inventory",
+    });
+    
+    loadActivityLogs();
 
     loadCards();
   };
@@ -405,6 +443,12 @@ const [authPassword, setAuthPassword] = useState("");
         >
           Stock In
         </button>
+        <button
+  onClick={() => setTab("activityLogs")}
+  style={{ marginLeft: 10 }}
+>
+  Activity Logs
+</button>
 
         <button onClick={() => setTab("sold")} style={{ marginLeft: 10 }}>
           Sales History
@@ -558,7 +602,31 @@ const [authPassword, setAuthPassword] = useState("");
           </form>
         </>
       )}
+            {tab === "activityLogs" && (
+        <div>
+          <h2>Activity Logs</h2>
 
+          {activityLogs.map((log) => (
+            <div
+              key={log.id}
+              style={{
+                border: "1px solid #ccc",
+                padding: 15,
+                marginBottom: 15,
+              }}
+            >
+              <div>Time: {new Date(log.created_at).toLocaleString()}</div>
+              <div>User: {log.user_email}</div>
+              <div>Action: {log.action}</div>
+              <div>Inventory ID: {log.inventory_id}</div>
+              <div>Card Number: {log.card_number}</div>
+              <div>Notes: {log.notes}</div>
+            </div>
+          ))}
+        </div>
+      )}
+      {tab !== "activityLogs" && (
+  <>
       <input
         placeholder="Search character, category, card number..."
         value={search}
@@ -622,6 +690,8 @@ const [authPassword, setAuthPassword] = useState("");
           </button>
         </div>
       ))}
+          </>
+  )}
     </div>
   );
 }
