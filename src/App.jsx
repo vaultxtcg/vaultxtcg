@@ -7,7 +7,6 @@ const emptyForm = {
   name: "",
   category: "Pokemon",
   card_number: "",
-  card_set: "",
   language: "English",
   cost: "",
   price: "",
@@ -28,7 +27,11 @@ export default function App() {
   const [editingId, setEditingId] = useState(null);
   const [frontFile, setFrontFile] = useState(null);
   const [backFile, setBackFile] = useState(null);
-
+  const [successMessage, setSuccessMessage] = useState("");
+const [user, setUser] = useState(null);
+const [authMode, setAuthMode] = useState("login");
+const [authEmail, setAuthEmail] = useState("");
+const [authPassword, setAuthPassword] = useState("");
   const loadCards = async () => {
     const { data, error } = await supabase
       .from("cards")
@@ -47,6 +50,67 @@ export default function App() {
     loadCards();
   }, []);
 
+  useEffect(() => {
+    supabase.auth.getUser().then(({ data }) => {
+      setUser(data.user);
+    });
+  
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((_event, session) => {
+      setUser(session?.user || null);
+    });
+  
+    return () => subscription.unsubscribe();
+  }, []);
+  const signUp = async () => {
+    const { error } = await supabase.auth.signUp({
+      email: authEmail,
+      password: authPassword,
+    });
+  
+    if (error) {
+      alert(error.message);
+      return;
+    }
+  
+    alert("Account created");
+  };
+  
+  const login = async () => {
+    const { error } = await supabase.auth.signInWithPassword({
+      email: authEmail,
+      password: authPassword,
+    });
+  
+    if (error) {
+      alert(error.message);
+    }
+  };
+  
+  const logout = async () => {
+    await supabase.auth.signOut();
+  };
+    const addActivityLog = async ({
+      action,
+      inventory_id,
+      card_number,
+      notes,
+    }) => {
+      const { error } = await supabase.from("activity_log").insert([
+        {
+          user_email: user?.email,
+          action,
+          inventory_id,
+          card_number,
+          notes,
+        },
+      ]);
+    
+      if (error) {
+        console.error("Activity Log Error:", error);
+      }
+    };
   const uploadFile = async (cardId, file, side) => {
     if (!file) return null;
 
@@ -76,15 +140,20 @@ export default function App() {
       return;
     }
 
+    const { id, ...formWithoutId } = form;
+
     const payload = {
-      ...form,
+      ...formWithoutId,
       cost: Number(form.cost || 0),
       price: Number(form.price || 0),
+      created_by: user?.email,
     };
 
     let cardId = editingId;
 
     if (editingId) {
+      payload.updated_by = user?.email;
+
       const { error } = await supabase
         .from("cards")
         .update(payload)
@@ -105,8 +174,26 @@ export default function App() {
         alert(error.message);
         return;
       }
-
       cardId = data.id;
+
+      const inventoryId = `VX-${String(data.id).padStart(6, "0")}`;
+
+      await supabase
+      .from("cards")
+      .update({ inventory_id: inventoryId })
+      .eq("id", data.id);
+    
+      await supabase
+      .from("cards")
+      .update({ inventory_id: inventoryId })
+      .eq("id", data.id);
+    
+    await addActivityLog({
+      action: "ADD",
+      inventory_id: inventoryId,
+      card_number: payload.card_number,
+      notes: "Added card to inventory",
+    });
     }
 
     const frontUrl = await uploadFile(cardId, frontFile, "front");
@@ -128,6 +215,8 @@ export default function App() {
       }
     }
 
+    setSuccessMessage("Card saved successfully!");
+
     setForm(emptyForm);
     setEditingId(null);
     setFrontFile(null);
@@ -138,11 +227,11 @@ export default function App() {
 
   const startEdit = (card) => {
     setEditingId(card.id);
+
     setForm({
       name: card.name || "",
       category: card.category || "Pokemon",
       card_number: card.card_number || "",
-      card_set: card.card_set || "",
       language: card.language || "English",
       cost: card.cost || "",
       price: card.price || "",
@@ -154,6 +243,7 @@ export default function App() {
       status: card.status || "Available",
       notes: card.notes || "",
     });
+
     setTab("stockIn");
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
@@ -169,10 +259,14 @@ export default function App() {
     const sold_price = Number(prompt("Sold Price?") || 0);
     if (!sold_price) return;
 
-    const sold_date = prompt("Sold Date? YYYY-MM-DD", new Date().toISOString().slice(0, 10));
+    const sold_date = prompt(
+      "Sold Date? YYYY-MM-DD",
+      new Date().toISOString().slice(0, 10)
+    );
     if (!sold_date) return;
 
-    const receiving_method = prompt("Receiving Method? Cash / Zelle / Venmo / Card / Others") || "";
+    const receiving_method =
+      prompt("Receiving Method? Cash / Zelle / Venmo / Card / Others") || "";
 
     const { error } = await supabase
       .from("cards")
@@ -181,6 +275,7 @@ export default function App() {
         sold_price,
         sold_date,
         receiving_method,
+        sold_by: user?.email,
       })
       .eq("id", card.id);
 
@@ -208,11 +303,11 @@ export default function App() {
 
   const filtered = cards.filter((c) => {
     const keyword = search.toLowerCase();
+
     const matchSearch =
       (c.name || "").toLowerCase().includes(keyword) ||
       (c.category || "").toLowerCase().includes(keyword) ||
-      (c.card_number || "").toLowerCase().includes(keyword) ||
-      (c.card_set || "").toLowerCase().includes(keyword);
+      (c.card_number || "").toLowerCase().includes(keyword);
 
     if (tab === "inventory") {
       return matchSearch && c.status !== "Sold";
@@ -228,15 +323,71 @@ export default function App() {
   const inventoryCards = cards.filter((c) => c.status !== "Sold");
   const soldCards = cards.filter((c) => c.status === "Sold");
 
-  const totalCost = inventoryCards.reduce((sum, c) => sum + Number(c.cost || 0), 0);
-  const totalValue = inventoryCards.reduce((sum, c) => sum + Number(c.price || 0), 0);
-  const soldRevenue = soldCards.reduce((sum, c) => sum + Number(c.sold_price || 0), 0);
-  const soldCost = soldCards.reduce((sum, c) => sum + Number(c.cost || 0), 0);
+  const totalCost = inventoryCards.reduce(
+    (sum, c) => sum + Number(c.cost || 0),
+    0
+  );
+
+  const totalValue = inventoryCards.reduce(
+    (sum, c) => sum + Number(c.price || 0),
+    0
+  );
+
+  const soldRevenue = soldCards.reduce(
+    (sum, c) => sum + Number(c.sold_price || 0),
+    0
+  );
+
+  const soldCost = soldCards.reduce(
+    (sum, c) => sum + Number(c.cost || 0),
+    0
+  );
+
+  if (!user) {
+    return (
+      <div style={{ padding: 20 }}>
+        <h1>Vault X TCG Login</h1>
+  
+        <input
+          placeholder="Email"
+          value={authEmail}
+          onChange={(e) => setAuthEmail(e.target.value)}
+        />
+  
+        <input
+          placeholder="Password"
+          type="password"
+          value={authPassword}
+          onChange={(e) => setAuthPassword(e.target.value)}
+          style={{ marginLeft: 10 }}
+        />
+  
+        <div style={{ marginTop: 15 }}>
+          {authMode === "login" ? (
+            <button onClick={login}>Login</button>
+          ) : (
+            <button onClick={signUp}>Create Account</button>
+          )}
+  
+          <button
+            onClick={() => setAuthMode(authMode === "login" ? "signup" : "login")}
+            style={{ marginLeft: 10 }}
+          >
+            {authMode === "login" ? "Need an account?" : "Already have an account?"}
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div style={{ padding: 20, fontFamily: "Arial" }}>
       <h1>Vault X TCG Inventory</h1>
-
+      {successMessage && (
+  <div style={{ padding: 10, marginBottom: 15, background: "#d1fae5" }}>
+    {successMessage}
+  </div>
+)}
       <div style={{ marginBottom: 20 }}>
         <b>Current Inventory:</b> {inventoryCards.length} |{" "}
         <b>Inventory Cost:</b> ${totalCost} |{" "}
@@ -246,23 +397,18 @@ export default function App() {
       </div>
 
       <div style={{ marginBottom: 20 }}>
-      <button onClick={() => setTab("inventory")}>
-  Inventory
-</button>
+        <button onClick={() => setTab("inventory")}>Inventory</button>
 
-<button
-  onClick={() => setTab("stockIn")}
-  style={{ marginLeft: 10 }}
->
-  Stock In
-</button>
+        <button
+          onClick={() => setTab("stockIn")}
+          style={{ marginLeft: 10 }}
+        >
+          Stock In
+        </button>
 
-<button
-  onClick={() => setTab("sold")}
-  style={{ marginLeft: 10 }}
->
-  Sales History
-</button>
+        <button onClick={() => setTab("sold")} style={{ marginLeft: 10 }}>
+          Sales History
+        </button>
       </div>
 
       {tab === "stockIn" && (
@@ -270,58 +416,142 @@ export default function App() {
           <h2>{editingId ? "Edit Card" : "Add Card"}</h2>
 
           <form onSubmit={saveCard} style={{ marginBottom: 30 }}>
-            <input placeholder="Character Name" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
+            <input
+              placeholder="Character Name"
+              value={form.name}
+              onChange={(e) =>
+                setForm({ ...form, name: e.target.value })
+              }
+            />
 
-            <select value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })}>
+            <select
+              value={form.category}
+              onChange={(e) =>
+                setForm({ ...form, category: e.target.value })
+              }
+            >
               <option value="Pokemon">Pokemon</option>
               <option value="One Piece">One Piece</option>
               <option value="Others">Others</option>
             </select>
 
-            <input placeholder="Card Number / ID e.g. OP13-108" value={form.card_number} onChange={(e) => setForm({ ...form, card_number: e.target.value })} />
+            <input
+              placeholder="Card Number / ID e.g. OP13-108"
+              value={form.card_number}
+              onChange={(e) =>
+                setForm({ ...form, card_number: e.target.value })
+              }
+            />
 
-            <input placeholder="Set e.g. OP13 / 151" value={form.card_set} onChange={(e) => setForm({ ...form, card_set: e.target.value })} />
-
-            <select value={form.language} onChange={(e) => setForm({ ...form, language: e.target.value })}>
+            <select
+              value={form.language}
+              onChange={(e) =>
+                setForm({ ...form, language: e.target.value })
+              }
+            >
               <option value="English">English</option>
               <option value="简中">简中</option>
               <option value="繁中">繁中</option>
               <option value="Others">Others</option>
             </select>
 
-            <input placeholder="Cost" value={form.cost} onChange={(e) => setForm({ ...form, cost: e.target.value })} />
-            <input placeholder="Price" value={form.price} onChange={(e) => setForm({ ...form, price: e.target.value })} />
+            <input
+              placeholder="Cost"
+              value={form.cost}
+              onChange={(e) => setForm({ ...form, cost: e.target.value })}
+            />
 
-            <input type="date" value={form.purchase_date} onChange={(e) => setForm({ ...form, purchase_date: e.target.value })} />
+            <input
+              placeholder="Price"
+              value={form.price}
+              onChange={(e) => setForm({ ...form, price: e.target.value })}
+            />
 
-            <input placeholder="Payment Method" value={form.payment_method} onChange={(e) => setForm({ ...form, payment_method: e.target.value })} />
+            <input
+              type="date"
+              value={form.purchase_date}
+              onChange={(e) =>
+                setForm({ ...form, purchase_date: e.target.value })
+              }
+            />
 
-            <input placeholder="Seller Name" value={form.seller_name} onChange={(e) => setForm({ ...form, seller_name: e.target.value })} />
+            <input
+              placeholder="Payment Method"
+              value={form.payment_method}
+              onChange={(e) =>
+                setForm({ ...form, payment_method: e.target.value })
+              }
+            />
 
-            <input placeholder="Seller Tel" value={form.seller_tel} onChange={(e) => setForm({ ...form, seller_tel: e.target.value })} />
+            <input
+              placeholder="Seller Name"
+              value={form.seller_name}
+              onChange={(e) =>
+                setForm({ ...form, seller_name: e.target.value })
+              }
+            />
 
-            <input placeholder="Storage Location" value={form.storage_location} onChange={(e) => setForm({ ...form, storage_location: e.target.value })} />
+            <input
+              placeholder="Seller Tel"
+              value={form.seller_tel}
+              onChange={(e) =>
+                setForm({ ...form, seller_tel: e.target.value })
+              }
+            />
 
-            <select value={form.status} onChange={(e) => setForm({ ...form, status: e.target.value })}>
+            <input
+              placeholder="Storage Location"
+              value={form.storage_location}
+              onChange={(e) =>
+                setForm({ ...form, storage_location: e.target.value })
+              }
+            />
+
+            <select
+              value={form.status}
+              onChange={(e) =>
+                setForm({ ...form, status: e.target.value })
+              }
+            >
               <option value="Available">Available</option>
               <option value="Hold">Hold</option>
               <option value="Others">Others</option>
             </select>
 
-            <textarea placeholder="Notes" value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} />
+            <textarea
+              placeholder="Notes"
+              value={form.notes}
+              onChange={(e) => setForm({ ...form, notes: e.target.value })}
+            />
 
             <div>
-              Front Image: <input type="file" accept="image/*" onChange={(e) => setFrontFile(e.target.files[0])} />
+              Front Image:{" "}
+              <input
+                type="file"
+                accept="image/*"
+                onChange={(e) => setFrontFile(e.target.files[0])}
+              />
             </div>
 
             <div>
-              Back Image: <input type="file" accept="image/*" onChange={(e) => setBackFile(e.target.files[0])} />
+              Back Image:{" "}
+              <input
+                type="file"
+                accept="image/*"
+                onChange={(e) => setBackFile(e.target.files[0])}
+              />
             </div>
 
-            <button type="submit">{editingId ? "Update Card" : "Save Card"}</button>
+            <button type="submit">
+              {editingId ? "Update Card" : "Save Card"}
+            </button>
 
             {editingId && (
-              <button type="button" onClick={cancelEdit} style={{ marginLeft: 10 }}>
+              <button
+                type="button"
+                onClick={cancelEdit}
+                style={{ marginLeft: 10 }}
+              >
                 Cancel Edit
               </button>
             )}
@@ -330,21 +560,33 @@ export default function App() {
       )}
 
       <input
-        placeholder="Search character, category, card number, set..."
+        placeholder="Search character, category, card number..."
         value={search}
         onChange={(e) => setSearch(e.target.value)}
         style={{ padding: 8, marginBottom: 20, width: 360 }}
       />
 
       {filtered.map((c) => (
-        <div key={c.id} style={{ border: "1px solid #ccc", padding: 15, marginBottom: 15 }}>
-          {c.front_image && <img src={c.front_image} alt="front" style={{ width: 140, marginRight: 10 }} />}
-          {c.back_image && <img src={c.back_image} alt="back" style={{ width: 140 }} />}
+        <div
+          key={c.id}
+          style={{ border: "1px solid #ccc", padding: 15, marginBottom: 15 }}
+        >
+          {c.front_image && (
+            <img
+              src={c.front_image}
+              alt="front"
+              style={{ width: 140, marginRight: 10 }}
+            />
+          )}
+
+          {c.back_image && (
+            <img src={c.back_image} alt="back" style={{ width: 140 }} />
+          )}
 
           <h3>{c.name}</h3>
+          <div>Inventory ID: {c.inventory_id || "N/A"}</div>
           <div>Category: {c.category}</div>
           <div>Card Number / ID: {c.card_number}</div>
-          <div>Set: {c.card_set}</div>
           <div>Language: {c.language}</div>
           <div>Cost: ${c.cost}</div>
           <div>Price: ${c.price}</div>
