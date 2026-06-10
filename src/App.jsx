@@ -33,6 +33,16 @@ const [user, setUser] = useState(null);
 const [authMode, setAuthMode] = useState("login");
 const [authEmail, setAuthEmail] = useState("");
 const [authPassword, setAuthPassword] = useState("");
+const [isMobile, setIsMobile] = useState(window.innerWidth <= 600);
+  useEffect(() => {
+    const handleResize = () => {
+      setIsMobile(window.innerWidth <= 600);
+    };
+
+    window.addEventListener("resize", handleResize);
+    return () => window.removeEventListener("resize", handleResize);
+  }, []);
+
   const loadCards = async () => {
     const { data, error } = await supabase
       .from("cards")
@@ -314,6 +324,7 @@ const [authPassword, setAuthPassword] = useState("");
     });
     
     loadCards();
+    loadActivityLogs();
   };
 
   const deleteCard = async (id) => {
@@ -463,13 +474,14 @@ const [authPassword, setAuthPassword] = useState("");
 
   if (!user) {
     return (
-      <div style={{ padding: 20 }}>
+      <div style={{ padding: isMobile ? 12 : 20, fontFamily: "Arial" }}>
         <h1>Vault X TCG Login</h1>
   
         <input
           placeholder="Email"
           value={authEmail}
           onChange={(e) => setAuthEmail(e.target.value)}
+          style={{ width: isMobile ? "100%" : "auto", boxSizing: "border-box", marginBottom: isMobile ? 10 : 0 }}
         />
   
         <input
@@ -477,7 +489,11 @@ const [authPassword, setAuthPassword] = useState("");
           type="password"
           value={authPassword}
           onChange={(e) => setAuthPassword(e.target.value)}
-          style={{ marginLeft: 10 }}
+          style={{
+            marginLeft: isMobile ? 0 : 10,
+            width: isMobile ? "100%" : "auto",
+            boxSizing: "border-box",
+          }}
         />
   
         <div style={{ marginTop: 15 }}>
@@ -499,14 +515,14 @@ const [authPassword, setAuthPassword] = useState("");
   }
 
   return (
-    <div style={{ padding: 20, fontFamily: "Arial" }}>
+    <div style={{ padding: isMobile ? 12 : 20, fontFamily: "Arial", maxWidth: "100%", boxSizing: "border-box" }}>
       <h1>Vault X TCG Inventory</h1>
       {successMessage && (
   <div style={{ padding: 10, marginBottom: 15, background: "#d1fae5" }}>
     {successMessage}
   </div>
 )}
-      <div style={{ marginBottom: 20 }}>
+      <div style={{ marginBottom: 20, display: "flex", flexWrap: "wrap", gap: 8 }}>
         <b>Current Inventory:</b> {inventoryCards.length} |{" "}
         <b>Inventory Cost:</b> ${totalCost} |{" "}
         <b>Inventory Value:</b> ${totalValue} |{" "}
@@ -516,6 +532,12 @@ const [authPassword, setAuthPassword] = useState("");
 
       <div style={{ marginBottom: 20 }}>
         <button onClick={() => setTab("inventory")}>Inventory</button>
+        <button
+  onClick={() => setTab("reports")}
+  style={{ marginLeft: 10 }}
+>
+  Reports
+</button>
 
         <button
           onClick={() => setTab("stockIn")}
@@ -529,17 +551,7 @@ const [authPassword, setAuthPassword] = useState("");
 >
   Activity Logs
 </button>
-<button onClick={exportInventoryCSV} style={{ marginLeft: 10 }}>
-  Export Inventory CSV
-</button>
 
-<button onClick={exportSalesCSV} style={{ marginLeft: 10 }}>
-  Export Sales CSV
-</button>
-
-<button onClick={exportActivityLogCSV} style={{ marginLeft: 10 }}>
-  Export Activity Log CSV
-</button>
 
         <button onClick={() => setTab("sold")} style={{ marginLeft: 10 }}>
           Sales History
@@ -555,6 +567,8 @@ const [authPassword, setAuthPassword] = useState("");
   style={{
     marginBottom: 30,
     maxWidth: 720,
+    width: "100%",
+    boxSizing: "border-box",
   }}
 >
   <div style={{ marginBottom: 20 }}>
@@ -567,7 +581,7 @@ const [authPassword, setAuthPassword] = useState("");
       style={{ width: "100%", marginBottom: 10 }}
     />
 
-    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+    <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 10 }}>
       <select
         value={form.category}
         onChange={(e) => setForm({ ...form, category: e.target.value })}
@@ -599,7 +613,7 @@ const [authPassword, setAuthPassword] = useState("");
   <div style={{ marginBottom: 20 }}>
     <h3>Purchase Info</h3>
 
-    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+    <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 10 }}>
       <input
         placeholder="Cost"
         value={form.cost}
@@ -631,7 +645,7 @@ const [authPassword, setAuthPassword] = useState("");
   <div style={{ marginBottom: 20 }}>
     <h3>Seller Info</h3>
 
-    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+    <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 10 }}>
       <input
         placeholder="Seller Name"
         value={form.seller_name}
@@ -649,7 +663,7 @@ const [authPassword, setAuthPassword] = useState("");
   <div style={{ marginBottom: 20 }}>
     <h3>Storage</h3>
 
-    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+    <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 10 }}>
       <input
         placeholder="Storage Location"
         value={form.storage_location}
@@ -708,7 +722,32 @@ const [authPassword, setAuthPassword] = useState("");
 </form>
         </>
       )}
-            {tab === "activityLogs" && (
+            {tab === "reports" && (
+        <div style={{ marginBottom: 30 }}>
+          <h2>Reports</h2>
+
+          <div style={{ marginBottom: 15 }}>
+            <button onClick={exportInventoryCSV}>Export Inventory CSV</button>
+            <button onClick={exportSalesCSV} style={{ marginLeft: 10 }}>
+              Export Sales CSV
+            </button>
+            <button onClick={exportActivityLogCSV} style={{ marginLeft: 10 }}>
+              Export Activity Log CSV
+            </button>
+          </div>
+
+          <div style={{ border: "1px solid #ccc", padding: 15 }}>
+            <div>Current Inventory Count: {inventoryCards.length}</div>
+            <div>Inventory Cost: ${totalCost}</div>
+            <div>Inventory Value: ${totalValue}</div>
+            <div>Sold Count: {soldCards.length}</div>
+            <div>Sold Revenue: ${soldRevenue}</div>
+            <div>Realized Profit: ${soldRevenue - soldCost}</div>
+          </div>
+        </div>
+      )}
+
+      {tab === "activityLogs" && (
         <div>
           <h2>Activity Logs</h2>
 
@@ -731,13 +770,14 @@ const [authPassword, setAuthPassword] = useState("");
           ))}
         </div>
       )}
-      {tab !== "activityLogs" && (
+
+      {(tab === "inventory" || tab === "sold") && (
   <>
       <input
         placeholder="Search character, category, card number..."
         value={search}
         onChange={(e) => setSearch(e.target.value)}
-        style={{ padding: 8, marginBottom: 20, width: 360 }}
+        style={{ padding: 8, marginBottom: 20, width: isMobile ? "100%" : 360, boxSizing: "border-box" }}
       />
 
       {filtered.map((c) => (
@@ -749,12 +789,12 @@ const [authPassword, setAuthPassword] = useState("");
             <img
               src={c.front_image}
               alt="front"
-              style={{ width: 140, marginRight: 10 }}
+              style={{ width: isMobile ? "100%" : 140, maxWidth: 220, marginRight: isMobile ? 0 : 10, marginBottom: 10 }}
             />
           )}
 
           {c.back_image && (
-            <img src={c.back_image} alt="back" style={{ width: 140 }} />
+            <img src={c.back_image} alt="back" style={{ width: isMobile ? "100%" : 140, maxWidth: 220, marginBottom: 10 }} />
           )}
 
           <h3>{c.name}</h3>
