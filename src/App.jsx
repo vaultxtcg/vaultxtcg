@@ -23,6 +23,7 @@ export default function App() {
   const [cards, setCards] = useState([]);
   const [activityLogs, setActivityLogs] = useState([]);
   const [tab, setTab] = useState("inventory");
+  const [selectedCard, setSelectedCard] = useState(null);
   const [search, setSearch] = useState("");
   const [form, setForm] = useState(emptyForm);
   const [editingId, setEditingId] = useState(null);
@@ -43,23 +44,53 @@ const [isMobile, setIsMobile] = useState(window.innerWidth <= 600);
     return () => window.removeEventListener("resize", handleResize);
   }, []);
 
-  const loadCards = async () => {
+  cconst [companyId, setCompanyId] = useState(null);
+  const [userRole, setUserRole] = useState(null);
+  
+  const loadCompany = async (currentUser) => {
+    if (!currentUser) return null;
+  
+    const { data, error } = await supabase
+      .from("company_members")
+      .select("company_id, role")
+      .eq("user_id", currentUser.id)
+      .single();
+  
+    if (error) {
+      alert("No company found for this user.");
+      return null;
+    }
+  
+    setCompanyId(data.company_id);
+    setUserRole(data.role);
+  
+    return data.company_id;
+  };
+  
+  const loadCards = async (targetCompanyId = companyId) => {
+    if (!targetCompanyId) return;
+  
     const { data, error } = await supabase
       .from("cards")
       .select("*")
+      .eq("company_id", targetCompanyId)
       .order("id", { ascending: false });
-
+  
     if (error) {
       alert(error.message);
       return;
     }
-
+  
     setCards(data || []);
   };
-  const loadActivityLogs = async () => {
+  
+  const loadActivityLogs = async (targetCompanyId = companyId) => {
+    if (!targetCompanyId) return;
+  
     const { data, error } = await supabase
       .from("activity_log")
       .select("*")
+      .eq("company_id", targetCompanyId)
       .order("created_at", { ascending: false });
   
     if (error) {
@@ -69,25 +100,49 @@ const [isMobile, setIsMobile] = useState(window.innerWidth <= 600);
   
     setActivityLogs(data || []);
   };
-
+  
   useEffect(() => {
-    loadActivityLogs();
-    loadCards();
-  }, []);
-
-  useEffect(() => {
-    supabase.auth.getUser().then(({ data }) => {
-      setUser(data.user);
-    });
+    const init = async () => {
+      const { data } = await supabase.auth.getUser();
+  
+      if (data.user) {
+        setUser(data.user);
+  
+        const currentCompanyId = await loadCompany(data.user);
+  
+        if (currentCompanyId) {
+          loadCards(currentCompanyId);
+          loadActivityLogs(currentCompanyId);
+        }
+      }
+    };
+  
+    init();
   
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, session) => {
+    } = supabase.auth.onAuthStateChange(async (_event, session) => {
       setUser(session?.user || null);
+  
+      if (session?.user) {
+        const currentCompanyId = await loadCompany(session.user);
+  
+        if (currentCompanyId) {
+          loadCards(currentCompanyId);
+          loadActivityLogs(currentCompanyId);
+        }
+      } else {
+        setCompanyId(null);
+        setUserRole(null);
+        setCards([]);
+        setActivityLogs([]);
+      }
     });
   
     return () => subscription.unsubscribe();
   }, []);
+
+  
   const signUp = async () => {
     const { error } = await supabase.auth.signUp({
       email: authEmail,
@@ -124,6 +179,7 @@ const [isMobile, setIsMobile] = useState(window.innerWidth <= 600);
     }) => {
       const { error } = await supabase.from("activity_log").insert([
         {
+          company_id: companyId,
           user_email: user?.email,
           action,
           inventory_id,
@@ -169,6 +225,7 @@ const [isMobile, setIsMobile] = useState(window.innerWidth <= 600);
   
     const payload = {
       ...formWithoutId,
+      company_id: companyId,
       cost: Number(form.cost || 0),
       price: Number(form.price || 0),
     };
@@ -442,9 +499,6 @@ const [isMobile, setIsMobile] = useState(window.innerWidth <= 600);
       return matchSearch && c.status !== "Sold";
     }
 
-    if (tab === "sold") {
-      return matchSearch && c.status === "Sold";
-    }
 
     return matchSearch;
   });
@@ -471,38 +525,54 @@ const [isMobile, setIsMobile] = useState(window.innerWidth <= 600);
     (sum, c) => sum + Number(c.cost || 0),
     0
   );
+  const sectionStyle = {
+    border: "1px solid #334155",
+    borderRadius: 12,
+    padding: 14,
+    marginBottom: 16,
+    background: "rgba(255,255,255,0.03)",
+  };
+  
+  const sectionTitleStyle = {
+    marginTop: 0,
+    marginBottom: 12,
+    fontSize: 20,
+  };
+  
+  const inputStyle = {
+    width: "100%",
+    boxSizing: "border-box",
+    padding: "10px 12px",
+    marginBottom: 10,
+  };
 
   if (!user) {
     return (
-      <div style={{ padding: isMobile ? 12 : 20, fontFamily: "Arial" }}>
+      <div style={{ padding: isMobile ? 12 : 20, fontFamily: "Arial", maxWidth: "100%", boxSizing: "border-box" }}>
         <h1>Vault X TCG Login</h1>
-  
+
         <input
           placeholder="Email"
           value={authEmail}
           onChange={(e) => setAuthEmail(e.target.value)}
-          style={{ width: isMobile ? "100%" : "auto", boxSizing: "border-box", marginBottom: isMobile ? 10 : 0 }}
+          style={inputStyle}
         />
-  
+
         <input
           placeholder="Password"
           type="password"
           value={authPassword}
           onChange={(e) => setAuthPassword(e.target.value)}
-          style={{
-            marginLeft: isMobile ? 0 : 10,
-            width: isMobile ? "100%" : "auto",
-            boxSizing: "border-box",
-          }}
+          style={inputStyle}
         />
-  
-        <div style={{ marginTop: 15 }}>
+
+        <div style={{ marginTop: 10 }}>
           {authMode === "login" ? (
             <button onClick={login}>Login</button>
           ) : (
             <button onClick={signUp}>Create Account</button>
           )}
-  
+
           <button
             onClick={() => setAuthMode(authMode === "login" ? "signup" : "login")}
             style={{ marginLeft: 10 }}
@@ -516,250 +586,272 @@ const [isMobile, setIsMobile] = useState(window.innerWidth <= 600);
 
   return (
     <div style={{ padding: isMobile ? 12 : 20, fontFamily: "Arial", maxWidth: "100%", boxSizing: "border-box" }}>
-      <h1>Vault X TCG Inventory</h1>
+      <h1>Vault X TCG</h1>
+
       {successMessage && (
-  <div style={{ padding: 10, marginBottom: 15, background: "#d1fae5" }}>
-    {successMessage}
-  </div>
-)}
-      <div style={{ marginBottom: 20, display: "flex", flexWrap: "wrap", gap: 8 }}>
-        <b>Current Inventory:</b> {inventoryCards.length} |{" "}
-        <b>Inventory Cost:</b> ${totalCost} |{" "}
-        <b>Inventory Value:</b> ${totalValue} |{" "}
-        <b>Sold Revenue:</b> ${soldRevenue} |{" "}
-        <b>Realized Profit:</b> ${soldRevenue - soldCost}
-      </div>
+        <div style={{ padding: 10, marginBottom: 15, background: "#d1fae5", color: "#064e3b", borderRadius: 8 }}>
+          {successMessage}
+        </div>
+      )}
 
-      <div style={{ marginBottom: 20 }}>
-        <button onClick={() => setTab("inventory")}>Inventory</button>
-        <button
-  onClick={() => setTab("reports")}
-  style={{ marginLeft: 10 }}
->
-  Reports
-</button>
+      {tab === "inventory" && (
+        <>
+          <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr 1fr" : "repeat(4, 1fr)", gap: 10, marginBottom: 18 }}>
+            <div style={sectionStyle}>
+              <div style={{ fontSize: 13, color: "#94a3b8" }}>Inventory</div>
+              <div style={{ fontSize: 22, fontWeight: "bold" }}>{inventoryCards.length}</div>
+            </div>
 
-        <button
-          onClick={() => setTab("stockIn")}
-          style={{ marginLeft: 10 }}
-        >
-          Stock In
-        </button>
-        <button
-  onClick={() => setTab("activityLogs")}
-  style={{ marginLeft: 10 }}
->
-  Activity Logs
-</button>
+            <div style={sectionStyle}>
+              <div style={{ fontSize: 13, color: "#94a3b8" }}>Cost</div>
+              <div style={{ fontSize: 22, fontWeight: "bold" }}>${Number(totalCost || 0).toLocaleString()}</div>
+            </div>
 
+            <div style={sectionStyle}>
+              <div style={{ fontSize: 13, color: "#94a3b8" }}>Sold Revenue</div>
+              <div style={{ fontSize: 22, fontWeight: "bold" }}>${Number(soldRevenue || 0).toLocaleString()}</div>
+            </div>
 
-        <button onClick={() => setTab("sold")} style={{ marginLeft: 10 }}>
-          Sales History
-        </button>
-      </div>
+            <div style={sectionStyle}>
+              <div style={{ fontSize: 13, color: "#94a3b8" }}>Realized Profit</div>
+              <div style={{ fontSize: 22, fontWeight: "bold" }}>${Number(soldRevenue - soldCost || 0).toLocaleString()}</div>
+            </div>
+          </div>
+
+          <div style={{ marginBottom: 18 }}>
+            <button onClick={() => setTab("stockIn")} style={{ fontSize: 16, padding: "10px 16px" }}>
+              ➕ Add Card
+            </button>
+
+            <button onClick={() => setTab("reports")} style={{ marginLeft: 10 }}>
+              📊 Reports
+            </button>
+
+            <button onClick={() => setTab("activityLogs")} style={{ marginLeft: 10 }}>
+              📋 Activity Logs
+            </button>
+          </div>
+        </>
+      )}
 
       {tab === "stockIn" && (
         <>
-          <h2>{editingId ? "Edit Card" : "Add Card"}</h2>
+          <button
+            type="button"
+            onClick={() => {
+              cancelEdit();
+              setTab("inventory");
+            }}
+            style={{ marginBottom: 15 }}
+          >
+            ← Back
+          </button>
 
-<form
-  onSubmit={saveCard}
-  style={{
-    marginBottom: 30,
-    maxWidth: 720,
-    width: "100%",
-    boxSizing: "border-box",
-  }}
->
-  <div style={{ marginBottom: 20 }}>
-    <h3>Basic Info</h3>
+          <h2 style={{ marginTop: 0 }}>{editingId ? "Edit Card" : "Add Card"}</h2>
 
-    <input
-      placeholder="Character Name"
-      value={form.name}
-      onChange={(e) => setForm({ ...form, name: e.target.value })}
-      style={{ width: "100%", marginBottom: 10 }}
-    />
+          <form onSubmit={saveCard} style={{ marginBottom: 60, maxWidth: 720, width: "100%", boxSizing: "border-box" }}>
+            <div style={sectionStyle}>
+              <h3 style={sectionTitleStyle}>Basic Info</h3>
 
-    <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 10 }}>
-      <select
-        value={form.category}
-        onChange={(e) => setForm({ ...form, category: e.target.value })}
-      >
-        <option value="Pokemon">Pokemon</option>
-        <option value="One Piece">One Piece</option>
-        <option value="Others">Others</option>
-      </select>
+              <input
+                placeholder="Character Name"
+                value={form.name}
+                onChange={(e) => setForm({ ...form, name: e.target.value })}
+                style={inputStyle}
+              />
 
-      <select
-        value={form.language}
-        onChange={(e) => setForm({ ...form, language: e.target.value })}
-      >
-        <option value="English">English</option>
-        <option value="简中">简中</option>
-        <option value="繁中">繁中</option>
-        <option value="Others">Others</option>
-      </select>
-    </div>
+              <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 10 }}>
+                <select value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })} style={inputStyle}>
+                  <option value="Pokemon">Pokemon</option>
+                  <option value="One Piece">One Piece</option>
+                  <option value="Others">Others</option>
+                </select>
 
-    <input
-      placeholder="Card Number / ID e.g. OP13-108"
-      value={form.card_number}
-      onChange={(e) => setForm({ ...form, card_number: e.target.value })}
-      style={{ width: "100%", marginTop: 10 }}
-    />
-  </div>
+                <select value={form.language} onChange={(e) => setForm({ ...form, language: e.target.value })} style={inputStyle}>
+                  <option value="English">English</option>
+                  <option value="简中">简中</option>
+                  <option value="繁中">繁中</option>
+                  <option value="Others">Others</option>
+                </select>
+              </div>
 
-  <div style={{ marginBottom: 20 }}>
-    <h3>Purchase Info</h3>
+              <input
+                placeholder="Card Number / ID e.g. OP13-108"
+                value={form.card_number}
+                onChange={(e) => setForm({ ...form, card_number: e.target.value })}
+                style={inputStyle}
+              />
+            </div>
 
-    <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 10 }}>
-      <input
-        placeholder="Cost"
-        value={form.cost}
-        onChange={(e) => setForm({ ...form, cost: e.target.value })}
-      />
+            <div style={sectionStyle}>
+              <h3 style={sectionTitleStyle}>Purchase Info</h3>
 
-      <input
-        placeholder="Price"
-        value={form.price}
-        onChange={(e) => setForm({ ...form, price: e.target.value })}
-      />
-    </div>
+              <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 10 }}>
+                <input placeholder="Cost" value={form.cost} onChange={(e) => setForm({ ...form, cost: e.target.value })} style={inputStyle} />
+              </div>
 
-    <input
-      type="date"
-      value={form.purchase_date}
-      onChange={(e) => setForm({ ...form, purchase_date: e.target.value })}
-      style={{ width: "100%", marginTop: 10 }}
-    />
+              <input type="date" value={form.purchase_date} onChange={(e) => setForm({ ...form, purchase_date: e.target.value })} style={inputStyle} />
+              <input placeholder="Payment Method" value={form.payment_method} onChange={(e) => setForm({ ...form, payment_method: e.target.value })} style={inputStyle} />
+            </div>
 
-    <input
-      placeholder="Payment Method"
-      value={form.payment_method}
-      onChange={(e) => setForm({ ...form, payment_method: e.target.value })}
-      style={{ width: "100%", marginTop: 10 }}
-    />
-  </div>
+            <div style={sectionStyle}>
+              <h3 style={sectionTitleStyle}>Seller Info</h3>
 
-  <div style={{ marginBottom: 20 }}>
-    <h3>Seller Info</h3>
+              <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 10 }}>
+                <input placeholder="Seller Name" value={form.seller_name} onChange={(e) => setForm({ ...form, seller_name: e.target.value })} style={inputStyle} />
+                <input placeholder="Seller Tel" value={form.seller_tel} onChange={(e) => setForm({ ...form, seller_tel: e.target.value })} style={inputStyle} />
+              </div>
+            </div>
 
-    <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 10 }}>
-      <input
-        placeholder="Seller Name"
-        value={form.seller_name}
-        onChange={(e) => setForm({ ...form, seller_name: e.target.value })}
-      />
+            <div style={sectionStyle}>
+              <h3 style={sectionTitleStyle}>Storage</h3>
 
-      <input
-        placeholder="Seller Tel"
-        value={form.seller_tel}
-        onChange={(e) => setForm({ ...form, seller_tel: e.target.value })}
-      />
-    </div>
-  </div>
+              <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 10 }}>
+                <input placeholder="Storage Location" value={form.storage_location} onChange={(e) => setForm({ ...form, storage_location: e.target.value })} style={inputStyle} />
 
-  <div style={{ marginBottom: 20 }}>
-    <h3>Storage</h3>
+                <select value={form.status} onChange={(e) => setForm({ ...form, status: e.target.value })} style={inputStyle}>
+                  <option value="Available">Available</option>
+                  <option value="Hold">Hold</option>
+                  <option value="Others">Others</option>
+                </select>
+              </div>
 
-    <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 10 }}>
-      <input
-        placeholder="Storage Location"
-        value={form.storage_location}
-        onChange={(e) => setForm({ ...form, storage_location: e.target.value })}
-      />
+              <textarea
+                placeholder="Notes"
+                value={form.notes}
+                onChange={(e) => setForm({ ...form, notes: e.target.value })}
+                style={{ ...inputStyle, minHeight: 90, resize: "vertical" }}
+              />
+            </div>
 
-      <select
-        value={form.status}
-        onChange={(e) => setForm({ ...form, status: e.target.value })}
-      >
-        <option value="Available">Available</option>
-        <option value="Hold">Hold</option>
-        <option value="Others">Others</option>
-      </select>
-    </div>
+            <div style={sectionStyle}>
+              <h3 style={sectionTitleStyle}>Images</h3>
 
-    <textarea
-      placeholder="Notes"
-      value={form.notes}
-      onChange={(e) => setForm({ ...form, notes: e.target.value })}
-      style={{ width: "100%", marginTop: 10, minHeight: 80 }}
-    />
-  </div>
+              <div style={{ marginBottom: 12 }}>
+                <div style={{ marginBottom: 6 }}>Front Image</div>
+                <input type="file" accept="image/*" onChange={(e) => setFrontFile(e.target.files[0])} />
+              </div>
 
-  <div style={{ marginBottom: 20 }}>
-    <h3>Images</h3>
+              <div>
+                <div style={{ marginBottom: 6 }}>Back Image</div>
+                <input type="file" accept="image/*" onChange={(e) => setBackFile(e.target.files[0])} />
+              </div>
+            </div>
 
-    <div style={{ marginBottom: 10 }}>
-      Front Image:{" "}
-      <input
-        type="file"
-        accept="image/*"
-        onChange={(e) => setFrontFile(e.target.files[0])}
-      />
-    </div>
+            <button type="submit">{editingId ? "Update Card" : "Save Card"}</button>
 
-    <div>
-      Back Image:{" "}
-      <input
-        type="file"
-        accept="image/*"
-        onChange={(e) => setBackFile(e.target.files[0])}
-      />
-    </div>
-  </div>
-
-  <button type="submit">
-    {editingId ? "Update Card" : "Save Card"}
-  </button>
-
-  {editingId && (
-    <button type="button" onClick={cancelEdit} style={{ marginLeft: 10 }}>
-      Cancel Edit
-    </button>
-  )}
-</form>
+            {editingId && (
+              <button type="button" onClick={cancelEdit} style={{ marginLeft: 10 }}>
+                Cancel Edit
+              </button>
+            )}
+          </form>
         </>
       )}
-            {tab === "reports" && (
+
+      {tab === "reports" && (
         <div style={{ marginBottom: 30 }}>
+          <button type="button" onClick={() => setTab("inventory")} style={{ marginBottom: 15 }}>
+            ← Back
+          </button>
+
           <h2>Reports</h2>
 
           <div style={{ marginBottom: 15 }}>
             <button onClick={exportInventoryCSV}>Export Inventory CSV</button>
-            <button onClick={exportSalesCSV} style={{ marginLeft: 10 }}>
-              Export Sales CSV
-            </button>
-            <button onClick={exportActivityLogCSV} style={{ marginLeft: 10 }}>
-              Export Activity Log CSV
-            </button>
+            <button onClick={exportSalesCSV} style={{ marginLeft: 10 }}>Export Sales CSV</button>
+            <button onClick={exportActivityLogCSV} style={{ marginLeft: 10 }}>Export Activity Log CSV</button>
           </div>
 
-          <div style={{ border: "1px solid #ccc", padding: 15 }}>
+          <div style={sectionStyle}>
             <div>Current Inventory Count: {inventoryCards.length}</div>
-            <div>Inventory Cost: ${totalCost}</div>
-            <div>Inventory Value: ${totalValue}</div>
+            <div>Inventory Cost: ${Number(totalCost || 0).toLocaleString()}</div>
             <div>Sold Count: {soldCards.length}</div>
-            <div>Sold Revenue: ${soldRevenue}</div>
-            <div>Realized Profit: ${soldRevenue - soldCost}</div>
+            <div>Sold Revenue: ${Number(soldRevenue || 0).toLocaleString()}</div>
+            <div>Realized Profit: ${Number(soldRevenue - soldCost || 0).toLocaleString()}</div>
+          </div>
+        </div>
+      )}
+
+      {tab === "detail" && selectedCard && (
+        <div>
+          <button
+            onClick={() => {
+              setSelectedCard(null);
+              setTab("inventory");
+            }}
+            style={{ marginBottom: 20 }}
+          >
+            ← Back
+          </button>
+
+          <h2>{selectedCard.name}</h2>
+
+          <div style={{ display: "flex", gap: 10, alignItems: "flex-start", marginBottom: 20 }}>
+            {selectedCard.front_image && (
+              <div style={{ flex: 1 }}>
+                <div style={{ fontSize: 12, marginBottom: 4 }}>Front</div>
+                <img src={selectedCard.front_image} alt="front" style={{ width: "100%", maxWidth: 260, height: "auto", display: "block" }} />
+              </div>
+            )}
+
+            {selectedCard.back_image && (
+              <div style={{ flex: 1 }}>
+                <div style={{ fontSize: 12, marginBottom: 4 }}>Back</div>
+                <img src={selectedCard.back_image} alt="back" style={{ width: "100%", maxWidth: 260, height: "auto", display: "block" }} />
+              </div>
+            )}
+          </div>
+
+          <div style={sectionStyle}>
+            <div>Inventory ID: {selectedCard.inventory_id || "N/A"}</div>
+            <div>Category: {selectedCard.category}</div>
+            <div>Card Number / ID: {selectedCard.card_number}</div>
+            <div>Language: {selectedCard.language}</div>
+            <div>Cost: ${selectedCard.cost}</div>
+            <div>List Price: ${selectedCard.price}</div>
+            <div>Purchase Date: {selectedCard.purchase_date}</div>
+            <div>Payment: {selectedCard.payment_method}</div>
+            <div>Seller: {selectedCard.seller_name}</div>
+            <div>Seller Tel: {selectedCard.seller_tel}</div>
+            <div>Location: {selectedCard.storage_location}</div>
+            <div>Status: {selectedCard.status}</div>
+
+            {selectedCard.status === "Sold" && (
+              <>
+                <div>Sold Price: ${selectedCard.sold_price}</div>
+                <div>Sold Date: {selectedCard.sold_date}</div>
+                <div>Receiving Method: {selectedCard.receiving_method}</div>
+                <div>Profit: ${Number(selectedCard.sold_price || 0) - Number(selectedCard.cost || 0)}</div>
+              </>
+            )}
+
+            <div>Notes: {selectedCard.notes}</div>
+          </div>
+
+          <div>
+            {selectedCard.status !== "Sold" && (
+              <>
+                <button onClick={() => startEdit(selectedCard)}>Edit</button>
+                <button onClick={() => markAsSold(selectedCard)} style={{ marginLeft: 10 }}>Mark Sold</button>
+              </>
+            )}
+
+            <button onClick={() => deleteCard(selectedCard.id)} style={{ marginLeft: 10 }}>Delete</button>
           </div>
         </div>
       )}
 
       {tab === "activityLogs" && (
         <div>
+          <button type="button" onClick={() => setTab("inventory")} style={{ marginBottom: 15 }}>
+            ← Back
+          </button>
+
           <h2>Activity Logs</h2>
 
           {activityLogs.map((log) => (
-            <div
-              key={log.id}
-              style={{
-                border: "1px solid #ccc",
-                padding: 15,
-                marginBottom: 15,
-              }}
-            >
+            <div key={log.id} style={{ border: "1px solid #334155", borderRadius: 12, padding: 15, marginBottom: 15, background: "rgba(255,255,255,0.03)" }}>
               <div>Time: {new Date(log.created_at).toLocaleString()}</div>
               <div>User: {log.user_email}</div>
               <div>Action: {log.action}</div>
@@ -771,102 +863,70 @@ const [isMobile, setIsMobile] = useState(window.innerWidth <= 600);
         </div>
       )}
 
-      {(tab === "inventory" || tab === "sold") && (
-  <>
-      <input
-        placeholder="Search character, category, card number..."
-        value={search}
-        onChange={(e) => setSearch(e.target.value)}
-        style={{ padding: 8, marginBottom: 20, width: isMobile ? "100%" : 360, boxSizing: "border-box" }}
-      />
+      {tab === "inventory" && (
+        <>
+          <input
+            placeholder="Search character, category, card number..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            style={{ ...inputStyle, marginBottom: 18 }}
+          />
 
-      {filtered.map((c) => (
-        <div
-          key={c.id}
-          style={{ border: "1px solid #ccc", padding: 15, marginBottom: 15 }}
-        >
-          <div
-            style={{
-              display: "flex",
-              gap: 10,
-              alignItems: "flex-start",
-              marginBottom: 10,
-            }}
-          >
-            {c.front_image && (
-              <div style={{ flex: 1 }}>
-                <div style={{ fontSize: 12, marginBottom: 4 }}>Front</div>
-                <img
-                  src={c.front_image}
-                  alt="front"
-                  style={{
-                    width: "100%",
-                    maxWidth: 220,
-                    height: "auto",
-                    display: "block",
-                  }}
-                />
+          {filtered.map((c) => (
+            <div key={c.id} style={{ border: "1px solid #334155", borderRadius: 12, padding: 14, marginBottom: 16, background: "rgba(255,255,255,0.03)" }}>
+              <div style={{ fontWeight: "bold", fontSize: 13, marginBottom: 10, color: "#94a3b8" }}>
+                {c.inventory_id || "N/A"}
               </div>
-            )}
 
-            {c.back_image && (
-              <div style={{ flex: 1 }}>
-                <div style={{ fontSize: 12, marginBottom: 4 }}>Back</div>
-                <img
-                  src={c.back_image}
-                  alt="back"
-                  style={{
-                    width: "100%",
-                    maxWidth: 220,
-                    height: "auto",
-                    display: "block",
-                  }}
-                />
+              <div style={{ display: "flex", gap: 10, alignItems: "flex-start", marginBottom: 10 }}>
+                {c.front_image && (
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontSize: 12, marginBottom: 4 }}>Front</div>
+                    <img src={c.front_image} alt="front" style={{ width: "100%", maxWidth: 220, height: "auto", display: "block" }} />
+                  </div>
+                )}
+
+                {c.back_image && (
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontSize: 12, marginBottom: 4 }}>Back</div>
+                    <img src={c.back_image} alt="back" style={{ width: "100%", maxWidth: 220, height: "auto", display: "block" }} />
+                  </div>
+                )}
               </div>
-            )}
-          </div>
 
-          <h3>{c.name}</h3>
-          <div>Inventory ID: {c.inventory_id || "N/A"}</div>
-          <div>Category: {c.category}</div>
-          <div>Card Number / ID: {c.card_number}</div>
-          <div>Language: {c.language}</div>
-          <div>Cost: ${c.cost}</div>
-          <div>Price: ${c.price}</div>
-          <div>Purchase Date: {c.purchase_date}</div>
-          <div>Payment: {c.payment_method}</div>
-          <div>Seller: {c.seller_name}</div>
-          <div>Seller Tel: {c.seller_tel}</div>
-          <div>Location: {c.storage_location}</div>
-          <div>Status: {c.status}</div>
+              <h3 style={{ marginTop: 8, marginBottom: 2 }}>{c.name}</h3>
 
-          {c.status === "Sold" && (
-            <>
-              <div>Sold Price: ${c.sold_price}</div>
-              <div>Sold Date: {c.sold_date}</div>
-              <div>Receiving Method: {c.receiving_method}</div>
-              <div>Profit: ${Number(c.sold_price || 0) - Number(c.cost || 0)}</div>
-            </>
-          )}
+              <div style={{ marginBottom: 10, color: "#94a3b8", fontSize: 14 }}>
+                {c.card_number || "N/A"}
+              </div>
 
-          <div>Notes: {c.notes}</div>
+              <div style={{ marginBottom: 8 }}><b>Status:</b> {c.status}</div>
+              <div style={{ marginBottom: 8 }}><b>Cost:</b> ${Number(c.cost || 0).toLocaleString()}</div>
+              <div style={{ marginBottom: 10 }}><b>List Price:</b> ${Number(c.price || 0).toLocaleString()}</div>
 
-          {c.status !== "Sold" && (
-            <>
-              <button onClick={() => startEdit(c)}>Edit</button>
-              <button onClick={() => markAsSold(c)} style={{ marginLeft: 10 }}>
-                Mark Sold
+              {c.notes && (
+                <div style={{ marginBottom: 10 }}><b>Notes:</b> {c.notes}</div>
+              )}
+
+              <button
+                onClick={() => {
+                  setSelectedCard(c);
+                  setTab("detail");
+                  window.scrollTo({ top: 0, behavior: "smooth" });
+                }}
+              >
+                View Details
               </button>
-            </>
-          )}
 
-          <button onClick={() => deleteCard(c.id)} style={{ marginLeft: 10 }}>
-            Delete
-          </button>
-        </div>
-      ))}
-          </>
-  )}
+              {c.status !== "Sold" && (
+                <button onClick={() => markAsSold(c)} style={{ marginLeft: 10 }}>
+                  Mark Sold
+                </button>
+              )}
+            </div>
+          ))}
+        </>
+      )}
     </div>
   );
 }
