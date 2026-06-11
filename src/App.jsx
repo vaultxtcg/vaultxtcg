@@ -44,7 +44,7 @@ const [isMobile, setIsMobile] = useState(window.innerWidth <= 600);
     return () => window.removeEventListener("resize", handleResize);
   }, []);
 
-  cconst [companyId, setCompanyId] = useState(null);
+  const [companyId, setCompanyId] = useState(null);
   const [userRole, setUserRole] = useState(null);
   
   const loadCompany = async (currentUser) => {
