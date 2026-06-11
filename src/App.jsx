@@ -30,18 +30,29 @@ export default function App() {
   const [frontFile, setFrontFile] = useState(null);
   const [backFile, setBackFile] = useState(null);
   const [successMessage, setSuccessMessage] = useState("");
-const [user, setUser] = useState(null);
-const [authMode, setAuthMode] = useState("login");
-const [authEmail, setAuthEmail] = useState("");
-const [authPassword, setAuthPassword] = useState("");
-const [isMobile, setIsMobile] = useState(window.innerWidth <= 600);
+
+  const [user, setUser] = useState(null);
+  const [authMode, setAuthMode] = useState("login");
+  const [authEmail, setAuthEmail] = useState("");
+  const [authPassword, setAuthPassword] = useState("");
+
+  const [companyName, setCompanyName] = useState("");
+
+
+  const [isMobile, setIsMobile] = useState(
+    window.innerWidth <= 600
+  );
+  
   useEffect(() => {
     const handleResize = () => {
       setIsMobile(window.innerWidth <= 600);
     };
-
+  
     window.addEventListener("resize", handleResize);
-    return () => window.removeEventListener("resize", handleResize);
+  
+    return () => {
+      window.removeEventListener("resize", handleResize);
+    };
   }, []);
 
   const [companyId, setCompanyId] = useState(null);
@@ -550,6 +561,14 @@ const [isMobile, setIsMobile] = useState(window.innerWidth <= 600);
     return (
       <div style={{ padding: isMobile ? 12 : 20, fontFamily: "Arial", maxWidth: "100%", boxSizing: "border-box" }}>
         <h1>Vault X TCG Login</h1>
+        {authMode === "signup" && (
+  <input
+    placeholder="Company Name"
+    value={companyName}
+    onChange={(e) => setCompanyName(e.target.value)}
+    style={inputStyle}
+  />
+)}
 
         <input
           placeholder="Email"
