@@ -631,8 +631,7 @@ export default function App() {
 
         <div style={{ marginTop: 10 }}>
           {authMode === "login" ? (
-            <button onClick={login}>Login</button>
-          ) : (
+            <button onClick={signIn}>Login</button>          ) : (
             <button onClick={signUp}>Create Account</button>
           )}
 
