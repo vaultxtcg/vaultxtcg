@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { supabase } from "./lib/supabase";
+import * as XLSX from "xlsx";
 
 const BUCKET_NAME = "TCG images";
 
@@ -553,6 +554,124 @@ export default function App() {
     downloadCSV("vaultxtcg_activity_log.csv", headers, activityLogs);
   };
 
+  const downloadExcelTemplate = () => {
+    const template = [
+      {
+        name: "Monkey D. Luffy",
+        category: "One Piece",
+        card_number: "OP13-108",
+        language: "English",
+        cost: 20,
+        price: 35,
+        purchase_date: "2026-06-12",
+        payment_method: "Cash",
+        seller_name: "Tom",
+        seller_tel: "6261234567",
+        storage_location: "Box A",
+        status: "Available",
+        notes: "Example row",
+      },
+    ];
+
+    const worksheet = XLSX.utils.json_to_sheet(template);
+    const workbook = XLSX.utils.book_new();
+
+    XLSX.utils.book_append_sheet(workbook, worksheet, "Inventory Template");
+    XLSX.writeFile(workbook, "vaultxtcg_import_template.xlsx");
+  };
+
+  const importExcel = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    if (!companyId) {
+      alert("Company ID not found. Please log in again.");
+      return;
+    }
+
+    const reader = new FileReader();
+
+    reader.onload = async (event) => {
+      try {
+        const data = new Uint8Array(event.target.result);
+        const workbook = XLSX.read(data, { type: "array" });
+        const sheetName = workbook.SheetNames[0];
+        const worksheet = workbook.Sheets[sheetName];
+        const rows = XLSX.utils.sheet_to_json(worksheet);
+
+        if (!rows.length) {
+          alert("Excel file is empty.");
+          return;
+        }
+
+        const payload = rows
+          .filter((row) => row.name || row.Name || row.card_number || row["Card Number"])
+          .map((row) => ({
+            company_id: companyId,
+            name: row.name || row.Name || "",
+            category: row.category || row.Category || "Pokemon",
+            card_number:
+              row.card_number ||
+              row["Card Number"] ||
+              row.cardNumber ||
+              row["Card Number / ID"] ||
+              "",
+            language: row.language || row.Language || "English",
+            cost: Number(row.cost || row.Cost || 0),
+            price: Number(row.price || row.Price || 0),
+            purchase_date: row.purchase_date || row["Purchase Date"] || null,
+            payment_method: row.payment_method || row["Payment Method"] || "",
+            seller_name: row.seller_name || row["Seller Name"] || "",
+            seller_tel: row.seller_tel || row["Seller Tel"] || "",
+            storage_location: row.storage_location || row["Storage Location"] || "",
+            status: row.status || row.Status || "Available",
+            notes: row.notes || row.Notes || "",
+            created_by: user?.email,
+          }));
+
+        if (!payload.length) {
+          alert("No valid rows found in Excel file.");
+          return;
+        }
+
+        const { data: insertedCards, error } = await supabase
+          .from("cards")
+          .insert(payload)
+          .select();
+
+        if (error) {
+          alert(error.message);
+          return;
+        }
+
+        for (const card of insertedCards) {
+          const inventoryId = `VX-${String(card.id).padStart(6, "0")}`;
+
+          await supabase
+            .from("cards")
+            .update({ inventory_id: inventoryId })
+            .eq("id", card.id);
+
+          await addActivityLog({
+            action: "IMPORT",
+            inventory_id: inventoryId,
+            card_number: card.card_number,
+            notes: "Imported from Excel",
+          });
+        }
+
+        alert(`${insertedCards.length} cards imported successfully!`);
+        loadCards();
+        loadActivityLogs();
+        e.target.value = "";
+      } catch (err) {
+        alert(`Import failed: ${err.message}`);
+      }
+    };
+
+    reader.readAsArrayBuffer(file);
+  };
+
   const filtered = cards.filter((c) => {
     const keyword = search.toLowerCase();
 
@@ -830,18 +949,35 @@ export default function App() {
 
           <h2>Reports</h2>
 
-          <div style={{ marginBottom: 15 }}>
+          <div style={sectionStyle}>
+            <h3 style={sectionTitleStyle}>Summary</h3>
+            <div>Current Inventory Count: {inventoryCards.length}</div>
+            <div>Inventory Cost: ${Number(totalCost || 0).toLocaleString()}</div>
+            <div>Sold Count: {soldCards.length}</div>
+            <div>Sold Revenue: ${Number(soldRevenue || 0).toLocaleString()}</div>
+            <div>Realized Profit: ${Number(soldRevenue - soldCost || 0).toLocaleString()}</div>
+          </div>
+
+          <div style={sectionStyle}>
+            <h3 style={sectionTitleStyle}>Export Tools</h3>
             <button onClick={exportInventoryCSV}>Export Inventory CSV</button>
             <button onClick={exportSalesCSV} style={{ marginLeft: 10 }}>Export Sales CSV</button>
             <button onClick={exportActivityLogCSV} style={{ marginLeft: 10 }}>Export Activity Log CSV</button>
           </div>
 
           <div style={sectionStyle}>
-            <div>Current Inventory Count: {inventoryCards.length}</div>
-            <div>Inventory Cost: ${Number(totalCost || 0).toLocaleString()}</div>
-            <div>Sold Count: {soldCards.length}</div>
-            <div>Sold Revenue: ${Number(soldRevenue || 0).toLocaleString()}</div>
-            <div>Realized Profit: ${Number(soldRevenue - soldCost || 0).toLocaleString()}</div>
+            <h3 style={sectionTitleStyle}>Import Tools</h3>
+
+            <button type="button" onClick={downloadExcelTemplate}>
+              Download Excel Template
+            </button>
+
+            <input
+              type="file"
+              accept=".xlsx,.xls"
+              onChange={importExcel}
+              style={{ display: "block", marginTop: 12 }}
+            />
           </div>
         </div>
       )}
