@@ -155,7 +155,12 @@ export default function App() {
 
   
   const signUp = async () => {
-    const { error } = await supabase.auth.signUp({
+    if (!companyName.trim()) {
+      alert("Please enter company name");
+      return;
+    }
+  
+    const { data, error } = await supabase.auth.signUp({
       email: authEmail,
       password: authPassword,
     });
@@ -165,18 +170,57 @@ export default function App() {
       return;
     }
   
-    alert("Account created");
-  };
-  
-  const login = async () => {
-    const { error } = await supabase.auth.signInWithPassword({
+    const { error: loginError } = await supabase.auth.signInWithPassword({
       email: authEmail,
       password: authPassword,
     });
   
-    if (error) {
-      alert(error.message);
+    if (loginError) {
+      alert(loginError.message);
+      return;
     }
+  
+    const {
+      data: { user: currentUser },
+      error: userError,
+    } = await supabase.auth.getUser();
+  
+    if (userError || !currentUser) {
+      alert("Account created, but user session was not found.");
+      return;
+    }
+  
+    const { data: companyData, error: companyError } = await supabase
+      .from("companies")
+      .insert([{ name: companyName }])
+      .select()
+      .single();
+  
+    if (companyError) {
+      alert(companyError.message);
+      return;
+    }
+  
+    const { error: memberError } = await supabase
+      .from("company_members")
+      .insert([
+        {
+          company_id: companyData.id,
+          user_id: currentUser.id,
+          role: "owner",
+        },
+      ]);
+  
+    if (memberError) {
+      alert(memberError.message);
+      return;
+    }
+  
+    setCompanyId(companyData.id);
+    setUserRole("owner");
+    setUser(currentUser);
+  
+    alert("Company created successfully!");
   };
   
   const logout = async () => {
@@ -689,7 +733,7 @@ export default function App() {
                 <select value={form.language} onChange={(e) => setForm({ ...form, language: e.target.value })} style={inputStyle}>
                   <option value="English">English</option>
                   <option value="简中">简中</option>
-                  <option value="繁中">繁中</option>
+                  <option value="Japanese">Japanese</option>
                   <option value="Others">Others</option>
                 </select>
               </div>
