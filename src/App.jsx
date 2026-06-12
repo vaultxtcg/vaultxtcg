@@ -153,6 +153,17 @@ export default function App() {
     return () => subscription.unsubscribe();
   }, []);
 
+  const signIn = async () => {
+    const { error } = await supabase.auth.signInWithPassword({
+      email: authEmail,
+      password: authPassword,
+    });
+  
+    if (error) {
+      alert(error.message);
+      return;
+    }
+  };
   
   const signUp = async () => {
     if (!companyName.trim()) {
