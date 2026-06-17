@@ -1097,6 +1097,48 @@ export default function App() {
               </>
             )}
 
+            <button
+              onClick={() =>
+                window.open(
+                  `https://www.tcgplayer.com/search/all/product?q=${encodeURIComponent(
+                    `${selectedCard.name} ${selectedCard.card_number}`
+                  )}`,
+                  "_blank"
+                )
+              }
+              style={{ marginLeft: 10 }}
+            >
+              Search TCGplayer
+            </button>
+
+            <button
+              onClick={() =>
+                window.open(
+                  `https://www.ebay.com/sch/i.html?_nkw=${encodeURIComponent(
+                    `${selectedCard.name} ${selectedCard.card_number}`
+                  )}`,
+                  "_blank"
+                )
+              }
+              style={{ marginLeft: 10 }}
+            >
+              Search eBay
+            </button>
+
+            <button
+              onClick={() =>
+                window.open(
+                  `https://www.google.com/search?q=${encodeURIComponent(
+                    `${selectedCard.name} ${selectedCard.card_number} PSA`
+                  )}`,
+                  "_blank"
+                )
+              }
+              style={{ marginLeft: 10 }}
+            >
+              Search PSA
+            </button>
+
             <button onClick={() => deleteCard(selectedCard.id)} style={{ marginLeft: 10 }}>Delete</button>
           </div>
         </div>
