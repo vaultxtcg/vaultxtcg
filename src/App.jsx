@@ -7,6 +7,7 @@ const BUCKET_NAME = "TCG images";
 const emptyForm = {
   name: "",
   category: "Pokemon",
+  quantity: 1,
   card_number: "",
   language: "English",
   cost: "",
@@ -295,6 +296,7 @@ export default function App() {
       company_id: companyId,
       cost: Number(form.cost || 0),
       price: Number(form.price || 0),
+      quantity: Number(form.quantity || 1),
     };
   
     let cardId = editingId;
@@ -387,6 +389,7 @@ export default function App() {
     setForm({
       name: card.name || "",
       category: card.category || "Pokemon",
+      quantity: card.quantity || 1,
       card_number: card.card_number || "",
       language: card.language || "English",
       cost: card.cost || "",
@@ -412,7 +415,27 @@ export default function App() {
   };
 
   const markAsSold = async (card) => {
-    const sold_price = Number(prompt("Sold Price?") || 0);
+    const availableQty = Number(card.quantity || 1);
+
+    const soldQty = Number(
+      prompt(`Quantity Sold? (Available: ${availableQty})`, 1) || 0
+    );
+
+    if (!soldQty) return;
+
+    if (soldQty < 1) {
+      alert("Quantity sold must be at least 1.");
+      return;
+    }
+
+    if (soldQty > availableQty) {
+      alert("Not enough inventory.");
+      return;
+    }
+
+    const sold_price = Number(
+      prompt("Total Sold Price for this sale?") || 0
+    );
     if (!sold_price) return;
 
     const sold_date = prompt(
@@ -424,15 +447,24 @@ export default function App() {
     const receiving_method =
       prompt("Receiving Method? Cash / Zelle / Venmo / Card / Others") || "";
 
+    const remainingQty = availableQty - soldQty;
+    const previousSoldPrice = Number(card.sold_price || 0);
+
+    const updatePayload = {
+      quantity: remainingQty,
+      sold_price: previousSoldPrice + sold_price,
+      sold_date,
+      receiving_method,
+      sold_by: user?.email,
+    };
+
+    if (remainingQty === 0) {
+      updatePayload.status = "Sold";
+    }
+
     const { error } = await supabase
       .from("cards")
-      .update({
-        status: "Sold",
-        sold_price,
-        sold_date,
-        receiving_method,
-        sold_by: user?.email,
-      })
+      .update(updatePayload)
       .eq("id", card.id);
 
     if (error) {
@@ -444,7 +476,7 @@ export default function App() {
       action: "SOLD",
       inventory_id: card.inventory_id,
       card_number: card.card_number,
-      notes: `Sold for $${sold_price} via ${receiving_method}`,
+      notes: `Sold ${soldQty} pcs for $${sold_price} via ${receiving_method}. Remaining qty: ${remainingQty}`,
     });
     
     loadCards();
@@ -503,6 +535,7 @@ export default function App() {
       "category",
       "card_number",
       "language",
+      "quantity",
       "cost",
       "price",
       "status",
@@ -527,6 +560,7 @@ export default function App() {
       "name",
       "category",
       "card_number",
+      "quantity",
       "cost",
       "sold_price",
       "sold_date",
@@ -559,6 +593,7 @@ export default function App() {
       {
         name: "Monkey D. Luffy",
         category: "One Piece",
+        quantity: 1,
         card_number: "OP13-108",
         language: "English",
         cost: 20,
@@ -617,6 +652,7 @@ export default function App() {
               row["Card Number / ID"] ||
               "",
             language: row.language || row.Language || "English",
+            quantity: Number(row.quantity || row.Quantity || row.qty || row.Qty || 1),
             cost: Number(row.cost || row.Cost || 0),
             price: Number(row.price || row.Price || 0),
             purchase_date: row.purchase_date || row["Purchase Date"] || null,
@@ -691,17 +727,22 @@ export default function App() {
   const inventoryCards = cards.filter((c) => c.status !== "Sold");
   const soldCards = cards.filter((c) => c.status === "Sold");
 
+  const inventoryQty = inventoryCards.reduce(
+    (sum, c) => sum + Number(c.quantity || 0),
+    0
+  );
+
   const totalCost = inventoryCards.reduce(
-    (sum, c) => sum + Number(c.cost || 0),
+    (sum, c) => sum + Number(c.cost || 0) * Number(c.quantity || 0),
     0
   );
 
   const totalValue = inventoryCards.reduce(
-    (sum, c) => sum + Number(c.price || 0),
+    (sum, c) => sum + Number(c.price || 0) * Number(c.quantity || 0),
     0
   );
 
-  const soldRevenue = soldCards.reduce(
+  const soldRevenue = cards.reduce(
     (sum, c) => sum + Number(c.sold_price || 0),
     0
   );
@@ -791,7 +832,7 @@ export default function App() {
           <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr 1fr" : "repeat(4, 1fr)", gap: 10, marginBottom: 18 }}>
             <div style={sectionStyle}>
               <div style={{ fontSize: 13, color: "#94a3b8" }}>Inventory</div>
-              <div style={{ fontSize: 22, fontWeight: "bold" }}>{inventoryCards.length}</div>
+              <div style={{ fontSize: 22, fontWeight: "bold" }}>{inventoryQty}</div>
             </div>
 
             <div style={sectionStyle}>
@@ -866,6 +907,15 @@ export default function App() {
                   <option value="Others">Others</option>
                 </select>
               </div>
+
+              <input
+                type="number"
+                min="1"
+                placeholder="Quantity"
+                value={form.quantity}
+                onChange={(e) => setForm({ ...form, quantity: e.target.value })}
+                style={inputStyle}
+              />
 
               <input
                 placeholder="Card Number / ID e.g. OP13-108"
@@ -951,7 +1001,7 @@ export default function App() {
 
           <div style={sectionStyle}>
             <h3 style={sectionTitleStyle}>Summary</h3>
-            <div>Current Inventory Count: {inventoryCards.length}</div>
+            <div>Current Inventory Quantity: {inventoryQty}</div>
             <div>Inventory Cost: ${Number(totalCost || 0).toLocaleString()}</div>
             <div>Sold Count: {soldCards.length}</div>
             <div>Sold Revenue: ${Number(soldRevenue || 0).toLocaleString()}</div>
@@ -1017,6 +1067,7 @@ export default function App() {
             <div>Category: {selectedCard.category}</div>
             <div>Card Number / ID: {selectedCard.card_number}</div>
             <div>Language: {selectedCard.language}</div>
+            <div>Quantity: {selectedCard.quantity || 0}</div>
             <div>Cost: ${selectedCard.cost}</div>
             <div>List Price: ${selectedCard.price}</div>
             <div>Purchase Date: {selectedCard.purchase_date}</div>
@@ -1110,6 +1161,7 @@ export default function App() {
               </div>
 
               <div style={{ marginBottom: 8 }}><b>Status:</b> {c.status}</div>
+              <div style={{ marginBottom: 8 }}><b>Qty:</b> {c.quantity || 0}</div>
               <div style={{ marginBottom: 8 }}><b>Cost:</b> ${Number(c.cost || 0).toLocaleString()}</div>
               <div style={{ marginBottom: 10 }}><b>List Price:</b> ${Number(c.price || 0).toLocaleString()}</div>
 
