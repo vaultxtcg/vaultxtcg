@@ -1,0 +1,1371 @@
+import { useEffect, useMemo, useState } from "react";
+import { supabase } from "./lib/supabase";
+import * as XLSX from "xlsx";
+
+const BUCKET_NAME = "TCG images";
+
+const emptyForm = {
+  name: "",
+  category: "Pokemon",
+  quantity: 1,
+  card_number: "",
+  language: "English",
+  cost: "",
+  price: "",
+  purchase_date: "",
+  payment_method: "",
+  seller_name: "",
+  seller_tel: "",
+  storage_location: "",
+  status: "Available",
+  notes: "",
+};
+
+const navItems = [
+  { key: "inventory", label: "Inventory", icon: "📦" },
+  { key: "stockIn", label: "Add Card", icon: "➕" },
+  { key: "transactions", label: "Transactions", icon: "🔁" },
+  { key: "activityLogs", label: "Activity Logs", icon: "📋" },
+  { key: "reports", label: "Reports", icon: "📊" },
+];
+
+const money = (value) => `$${Number(value || 0).toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
+const fmtDate = (value) => (value ? new Date(value).toLocaleString() : "");
+const toNumber = (value, fallback = 0) => Number(value || fallback);
+
+function diffObjects(beforeObj = {}, afterObj = {}, keys = []) {
+  const changes = [];
+  keys.forEach((key) => {
+    const beforeValue = beforeObj?.[key] ?? "";
+    const afterValue = afterObj?.[key] ?? "";
+    if (String(beforeValue) !== String(afterValue)) {
+      changes.push(`${key}: ${beforeValue || "blank"} → ${afterValue || "blank"}`);
+    }
+  });
+  return changes.length ? changes.join("; ") : "No field change detected";
+}
+
+export default function App() {
+  const [cards, setCards] = useState([]);
+  const [activityLogs, setActivityLogs] = useState([]);
+  const [transactions, setTransactions] = useState([]);
+  const [tab, setTab] = useState("inventory");
+  const [selectedCard, setSelectedCard] = useState(null);
+  const [search, setSearch] = useState("");
+  const [form, setForm] = useState(emptyForm);
+  const [editingId, setEditingId] = useState(null);
+  const [frontFile, setFrontFile] = useState(null);
+  const [backFile, setBackFile] = useState(null);
+  const [toast, setToast] = useState(null);
+  const [modal, setModal] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+
+  const [user, setUser] = useState(null);
+  const [authMode, setAuthMode] = useState("login");
+  const [authEmail, setAuthEmail] = useState("");
+  const [authPassword, setAuthPassword] = useState("");
+  const [companyName, setCompanyName] = useState("");
+  const [companyId, setCompanyId] = useState(null);
+  const [userRole, setUserRole] = useState(null);
+  const [isMobile, setIsMobile] = useState(window.innerWidth <= 760);
+
+  const canAdmin = ["owner", "admin"].includes(userRole);
+  const canDelete = canAdmin;
+  const canAdjust = canAdmin;
+  const canEditSale = canAdmin;
+  const canTrade = canAdmin;
+
+  useEffect(() => {
+    const handleResize = () => setIsMobile(window.innerWidth <= 760);
+    window.addEventListener("resize", handleResize);
+    return () => window.removeEventListener("resize", handleResize);
+  }, []);
+
+  const showToast = (message, type = "success") => {
+    setToast({ message, type });
+    window.setTimeout(() => setToast(null), 2500);
+  };
+
+  const askModal = ({ title, message, fields = [], confirmText = "Confirm", danger = false }) => {
+    return new Promise((resolve) => {
+      const initialValues = {};
+      fields.forEach((field) => {
+        initialValues[field.name] = field.defaultValue ?? "";
+      });
+      setModal({ title, message, fields, values: initialValues, confirmText, danger, resolve });
+    });
+  };
+
+  const closeModal = (result) => {
+    if (modal?.resolve) modal.resolve(result);
+    setModal(null);
+  };
+
+  const loadCompany = async (currentUser) => {
+    if (!currentUser) return null;
+    const { data, error } = await supabase
+      .from("company_members")
+      .select("company_id, role")
+      .eq("user_id", currentUser.id)
+      .single();
+
+    if (error) {
+      showToast("No company found for this user.", "error");
+      return null;
+    }
+
+    setCompanyId(data.company_id);
+    setUserRole(data.role);
+    return data.company_id;
+  };
+
+  const loadCards = async (targetCompanyId = companyId) => {
+    if (!targetCompanyId) return;
+    const { data, error } = await supabase
+      .from("cards")
+      .select("*")
+      .eq("company_id", targetCompanyId)
+      .order("id", { ascending: false });
+
+    if (error) {
+      showToast(error.message, "error");
+      return;
+    }
+    setCards(data || []);
+  };
+
+  const loadActivityLogs = async (targetCompanyId = companyId) => {
+    if (!targetCompanyId) return;
+    const { data, error } = await supabase
+      .from("activity_log")
+      .select("*")
+      .eq("company_id", targetCompanyId)
+      .order("created_at", { ascending: false });
+
+    if (error) {
+      showToast(error.message, "error");
+      return;
+    }
+    setActivityLogs(data || []);
+  };
+
+  const loadTransactions = async (targetCompanyId = companyId) => {
+    if (!targetCompanyId) return;
+    const { data, error } = await supabase
+      .from("inventory_transactions")
+      .select("*")
+      .eq("company_id", targetCompanyId)
+      .order("created_at", { ascending: false });
+
+    if (error) {
+      console.error("Transactions Load Error:", error);
+      return;
+    }
+    setTransactions(data || []);
+  };
+
+  const refreshAll = async (targetCompanyId = companyId) => {
+    await Promise.all([
+      loadCards(targetCompanyId),
+      loadActivityLogs(targetCompanyId),
+      loadTransactions(targetCompanyId),
+    ]);
+  };
+
+  useEffect(() => {
+    const init = async () => {
+      setLoading(true);
+      const { data } = await supabase.auth.getUser();
+      if (data.user) {
+        setUser(data.user);
+        const currentCompanyId = await loadCompany(data.user);
+        if (currentCompanyId) await refreshAll(currentCompanyId);
+      }
+      setLoading(false);
+    };
+
+    init();
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
+      setUser(session?.user || null);
+      if (session?.user) {
+        setLoading(true);
+        const currentCompanyId = await loadCompany(session.user);
+        if (currentCompanyId) await refreshAll(currentCompanyId);
+        setLoading(false);
+      } else {
+        setCompanyId(null);
+        setUserRole(null);
+        setCards([]);
+        setActivityLogs([]);
+        setTransactions([]);
+      }
+    });
+
+    return () => subscription.unsubscribe();
+  }, []);
+
+  const signIn = async () => {
+    setSaving(true);
+    const { error } = await supabase.auth.signInWithPassword({ email: authEmail, password: authPassword });
+    setSaving(false);
+    if (error) showToast(error.message, "error");
+  };
+
+  const signUp = async () => {
+    if (!companyName.trim()) {
+      showToast("Please enter company name", "error");
+      return;
+    }
+
+    setSaving(true);
+    const { error } = await supabase.auth.signUp({ email: authEmail, password: authPassword });
+    if (error) {
+      setSaving(false);
+      showToast(error.message, "error");
+      return;
+    }
+
+    const { error: loginError } = await supabase.auth.signInWithPassword({ email: authEmail, password: authPassword });
+    if (loginError) {
+      setSaving(false);
+      showToast(loginError.message, "error");
+      return;
+    }
+
+    const { data: { user: currentUser }, error: userError } = await supabase.auth.getUser();
+    if (userError || !currentUser) {
+      setSaving(false);
+      showToast("Account created, but user session was not found.", "error");
+      return;
+    }
+
+    const { data: companyData, error: companyError } = await supabase
+      .from("companies")
+      .insert([{ name: companyName }])
+      .select()
+      .single();
+
+    if (companyError) {
+      setSaving(false);
+      showToast(companyError.message, "error");
+      return;
+    }
+
+    const { error: memberError } = await supabase.from("company_members").insert([
+      { company_id: companyData.id, user_id: currentUser.id, role: "owner" },
+    ]);
+
+    setSaving(false);
+    if (memberError) {
+      showToast(memberError.message, "error");
+      return;
+    }
+
+    setCompanyId(companyData.id);
+    setUserRole("owner");
+    setUser(currentUser);
+    showToast("Company created successfully");
+  };
+
+  const logout = async () => {
+    await supabase.auth.signOut();
+  };
+
+  const addActivityLog = async ({ action, inventory_id, card_number, notes }) => {
+    const { error } = await supabase.from("activity_log").insert([
+      { company_id: companyId, user_email: user?.email, action, inventory_id, card_number, notes },
+    ]);
+    if (error) console.error("Activity Log Error:", error);
+  };
+
+  const addTransaction = async ({ inventory_id, card_number, transaction_type, quantity, cost, price, notes }) => {
+    const { error } = await supabase.from("inventory_transactions").insert([
+      {
+        company_id: companyId,
+        inventory_id,
+        card_number,
+        transaction_type,
+        quantity: Number(quantity || 0),
+        cost: Number(cost || 0),
+        price: Number(price || 0),
+        notes,
+        user_email: user?.email,
+      },
+    ]);
+    if (error) console.error("Transaction Error:", error);
+  };
+
+  const uploadFile = async (cardId, file, side) => {
+    if (!file) return null;
+    const fileName = `${cardId}-${side}-${Date.now()}-${file.name}`;
+    const { error } = await supabase.storage.from(BUCKET_NAME).upload(fileName, file);
+    if (error) {
+      showToast(error.message, "error");
+      return null;
+    }
+    const { data } = supabase.storage.from(BUCKET_NAME).getPublicUrl(fileName);
+    return data.publicUrl;
+  };
+
+  const saveCard = async (e) => {
+    e.preventDefault();
+    if (!form.name.trim()) {
+      showToast("Character Name is required", "error");
+      return;
+    }
+    if (!companyId) {
+      showToast("Company ID not found. Please log in again.", "error");
+      return;
+    }
+
+    setSaving(true);
+    const { id, ...formWithoutId } = form;
+    const payload = {
+      ...formWithoutId,
+      company_id: companyId,
+      cost: Number(form.cost || 0),
+      price: Number(form.price || 0),
+      quantity: Number(form.quantity || 1),
+    };
+
+    let cardId = editingId;
+    let inventoryId = null;
+
+    if (editingId) {
+      payload.updated_by = user?.email;
+      const currentCard = cards.find((c) => c.id === editingId);
+      inventoryId = currentCard?.inventory_id;
+      const changes = diffObjects(currentCard, payload, [
+        "name", "category", "quantity", "card_number", "language", "cost", "price", "purchase_date",
+        "payment_method", "seller_name", "seller_tel", "storage_location", "status", "notes",
+      ]);
+
+      const { error } = await supabase.from("cards").update(payload).eq("id", editingId);
+      if (error) {
+        setSaving(false);
+        showToast(error.message, "error");
+        return;
+      }
+
+      await addActivityLog({
+        action: "EDIT",
+        inventory_id: inventoryId,
+        card_number: payload.card_number,
+        notes: `Card updated. Changes: ${changes}`,
+      });
+    } else {
+      payload.created_by = user?.email;
+      const { data, error } = await supabase.from("cards").insert([payload]).select().single();
+      if (error) {
+        setSaving(false);
+        showToast(error.message, "error");
+        return;
+      }
+
+      cardId = data.id;
+      inventoryId = `VX-${String(data.id).padStart(6, "0")}`;
+      await supabase.from("cards").update({ inventory_id: inventoryId }).eq("id", data.id);
+
+      await addActivityLog({
+        action: "ADD",
+        inventory_id: inventoryId,
+        card_number: payload.card_number,
+        notes: `Added card. Qty: ${payload.quantity}; Cost: ${money(payload.cost)}; Location: ${payload.storage_location || "N/A"}`,
+      });
+      await addTransaction({
+        inventory_id: inventoryId,
+        card_number: payload.card_number,
+        transaction_type: "ADD",
+        quantity: payload.quantity,
+        cost: payload.cost * payload.quantity,
+        price: payload.price * payload.quantity,
+        notes: "Card added to inventory",
+      });
+    }
+
+    const frontUrl = await uploadFile(cardId, frontFile, "front");
+    const backUrl = await uploadFile(cardId, backFile, "back");
+    const updates = {};
+    if (frontUrl) updates.front_image = frontUrl;
+    if (backUrl) updates.back_image = backUrl;
+
+    if (Object.keys(updates).length > 0) {
+      const { error } = await supabase.from("cards").update(updates).eq("id", cardId);
+      if (error) {
+        setSaving(false);
+        showToast(error.message, "error");
+        return;
+      }
+    }
+
+    setForm(emptyForm);
+    setEditingId(null);
+    setFrontFile(null);
+    setBackFile(null);
+    await refreshAll();
+    setSaving(false);
+    setTab("inventory");
+    showToast(editingId ? "Card updated" : "Card saved");
+  };
+
+  const startEdit = (card) => {
+    setEditingId(card.id);
+    setForm({
+      name: card.name || "",
+      category: card.category || "Pokemon",
+      quantity: card.quantity || 1,
+      card_number: card.card_number || "",
+      language: card.language || "English",
+      cost: card.cost || "",
+      price: card.price || "",
+      purchase_date: card.purchase_date || "",
+      payment_method: card.payment_method || "",
+      seller_name: card.seller_name || "",
+      seller_tel: card.seller_tel || "",
+      storage_location: card.storage_location || "",
+      status: card.status || "Available",
+      notes: card.notes || "",
+    });
+    setSelectedCard(null);
+    setTab("stockIn");
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  };
+
+  const cancelEdit = () => {
+    setEditingId(null);
+    setForm(emptyForm);
+    setFrontFile(null);
+    setBackFile(null);
+  };
+
+  const markAsSold = async (card) => {
+    const availableQty = Number(card.quantity || 1);
+    const result = await askModal({
+      title: "Mark as sold",
+      message: `${card.name} · Available: ${availableQty}`,
+      confirmText: "Record Sale",
+      fields: [
+        { name: "soldQty", label: "Quantity Sold", type: "number", defaultValue: 1 },
+        { name: "soldPrice", label: "Total Sold Price", type: "number", defaultValue: card.price || 0 },
+        { name: "soldDate", label: "Sold Date", type: "date", defaultValue: new Date().toISOString().slice(0, 10) },
+        { name: "receivingMethod", label: "Receiving Method", placeholder: "Cash / Zelle / Venmo / Card / Others" },
+      ],
+    });
+    if (!result) return;
+
+    const soldQty = Number(result.soldQty || 0);
+    const soldPrice = Number(result.soldPrice || 0);
+    if (soldQty < 1) return showToast("Quantity sold must be at least 1", "error");
+    if (soldQty > availableQty) return showToast("Not enough inventory", "error");
+    if (soldPrice <= 0) return showToast("Sold price is required", "error");
+
+    setSaving(true);
+    const remainingQty = availableQty - soldQty;
+    const previousSoldPrice = Number(card.sold_price || 0);
+    const updatePayload = {
+      quantity: remainingQty,
+      sold_price: previousSoldPrice + soldPrice,
+      sold_date: result.soldDate,
+      receiving_method: result.receivingMethod || "",
+      sold_by: user?.email,
+    };
+    if (remainingQty === 0) updatePayload.status = "Sold";
+
+    const { error } = await supabase.from("cards").update(updatePayload).eq("id", card.id);
+    if (error) {
+      setSaving(false);
+      showToast(error.message, "error");
+      return;
+    }
+
+    await addActivityLog({
+      action: "SOLD",
+      inventory_id: card.inventory_id,
+      card_number: card.card_number,
+      notes: `Before qty: ${availableQty}; After qty: ${remainingQty}; Sold ${soldQty} pcs for ${money(soldPrice)} via ${result.receivingMethod || "N/A"}`,
+    });
+    await addTransaction({
+      inventory_id: card.inventory_id,
+      card_number: card.card_number,
+      transaction_type: "SELL",
+      quantity: -soldQty,
+      cost: Number(card.cost || 0) * soldQty,
+      price: soldPrice,
+      notes: `Sale via ${result.receivingMethod || "N/A"}`,
+    });
+
+    await refreshAll();
+    setSaving(false);
+    showToast("Sale recorded");
+  };
+
+  const adjustQuantity = async (card) => {
+    if (!canAdjust) return showToast("Only owner/admin can adjust inventory", "error");
+    const oldQty = Number(card.quantity || 0);
+    const result = await askModal({
+      title: "Adjust quantity",
+      message: `${card.name} · Current qty: ${oldQty}`,
+      confirmText: "Adjust",
+      fields: [
+        { name: "newQty", label: "New Quantity", type: "number", defaultValue: oldQty },
+        { name: "reason", label: "Reason", placeholder: "Missing / Found / Damaged / Inventory Count / Other" },
+      ],
+    });
+    if (!result) return;
+    const newQty = Number(result.newQty);
+    if (Number.isNaN(newQty) || newQty < 0) return showToast("New quantity must be 0 or higher", "error");
+
+    setSaving(true);
+    const diff = newQty - oldQty;
+    const updatePayload = { quantity: newQty, status: newQty === 0 ? "Sold" : "Available", updated_by: user?.email };
+    const { error } = await supabase.from("cards").update(updatePayload).eq("id", card.id);
+    if (error) {
+      setSaving(false);
+      showToast(error.message, "error");
+      return;
+    }
+
+    await addActivityLog({
+      action: "ADJUSTMENT",
+      inventory_id: card.inventory_id,
+      card_number: card.card_number,
+      notes: `Before qty: ${oldQty}; After qty: ${newQty}; Difference: ${diff}; Reason: ${result.reason || "Inventory adjustment"}`,
+    });
+    await addTransaction({
+      inventory_id: card.inventory_id,
+      card_number: card.card_number,
+      transaction_type: "ADJUSTMENT",
+      quantity: diff,
+      cost: Number(card.cost || 0) * diff,
+      price: Number(card.price || 0) * diff,
+      notes: result.reason || "Inventory adjustment",
+    });
+
+    await refreshAll();
+    setSaving(false);
+    showToast("Quantity adjusted");
+  };
+
+  const editSale = async (card) => {
+    if (!canEditSale) return showToast("Only owner/admin can edit sales", "error");
+    const result = await askModal({
+      title: "Edit sale information",
+      message: `${card.name} · ${card.inventory_id}`,
+      confirmText: "Save Sale Edit",
+      fields: [
+        { name: "soldPrice", label: "Sold Price", type: "number", defaultValue: card.sold_price || 0 },
+        { name: "soldDate", label: "Sold Date", type: "date", defaultValue: card.sold_date || new Date().toISOString().slice(0, 10) },
+        { name: "receivingMethod", label: "Receiving Method", defaultValue: card.receiving_method || "" },
+      ],
+    });
+    if (!result) return;
+
+    setSaving(true);
+    const updatePayload = {
+      sold_price: Number(result.soldPrice || 0),
+      sold_date: result.soldDate,
+      receiving_method: result.receivingMethod || "",
+      updated_by: user?.email,
+    };
+    const changes = diffObjects(card, updatePayload, ["sold_price", "sold_date", "receiving_method"]);
+    const { error } = await supabase.from("cards").update(updatePayload).eq("id", card.id);
+    if (error) {
+      setSaving(false);
+      showToast(error.message, "error");
+      return;
+    }
+
+    await addActivityLog({
+      action: "EDIT_SALE",
+      inventory_id: card.inventory_id,
+      card_number: card.card_number,
+      notes: `Sale edited. Changes: ${changes}`,
+    });
+    await refreshAll();
+    setSelectedCard((prev) => prev ? { ...prev, ...updatePayload } : prev);
+    setSaving(false);
+    showToast("Sale updated");
+  };
+
+  const undoSale = async (card) => {
+    if (!canEditSale) return showToast("Only owner/admin can undo sales", "error");
+    const result = await askModal({
+      title: "Undo sale",
+      message: "This will add quantity back to inventory and reset sale fields for this item.",
+      confirmText: "Undo Sale",
+      danger: true,
+      fields: [
+        { name: "restoreQty", label: "Quantity to restore", type: "number", defaultValue: 1 },
+        { name: "reason", label: "Reason", placeholder: "Customer return / mistake / other" },
+      ],
+    });
+    if (!result) return;
+    const restoreQty = Number(result.restoreQty || 1);
+    if (restoreQty < 1) return showToast("Restore quantity must be at least 1", "error");
+
+    setSaving(true);
+    const oldQty = Number(card.quantity || 0);
+    const newQty = oldQty + restoreQty;
+    const updatePayload = {
+      quantity: newQty,
+      status: "Available",
+      sold_price: 0,
+      sold_date: null,
+      receiving_method: "",
+      updated_by: user?.email,
+    };
+    const { error } = await supabase.from("cards").update(updatePayload).eq("id", card.id);
+    if (error) {
+      setSaving(false);
+      showToast(error.message, "error");
+      return;
+    }
+
+    await addActivityLog({
+      action: "UNDO_SALE",
+      inventory_id: card.inventory_id,
+      card_number: card.card_number,
+      notes: `Before qty: ${oldQty}; After qty: ${newQty}; Restored qty: ${restoreQty}; Reason: ${result.reason || "Sale undone"}`,
+    });
+    await addTransaction({
+      inventory_id: card.inventory_id,
+      card_number: card.card_number,
+      transaction_type: "UNDO_SALE",
+      quantity: restoreQty,
+      cost: Number(card.cost || 0) * restoreQty,
+      price: 0,
+      notes: result.reason || "Sale undone and quantity restored",
+    });
+
+    await refreshAll();
+    setSaving(false);
+    setTab("inventory");
+    setSelectedCard(null);
+    showToast("Sale undone");
+  };
+
+  const tradeInCard = async () => {
+    if (!canTrade) return showToast("Only owner/admin can create trades", "error");
+    const result = await askModal({
+      title: "Trade in card",
+      message: "Record a card received from a customer through trade.",
+      confirmText: "Create Trade In",
+      fields: [
+        { name: "name", label: "Card Name / Character Name" },
+        { name: "cardNumber", label: "Card Number / ID" },
+        { name: "quantity", label: "Quantity", type: "number", defaultValue: 1 },
+        { name: "cost", label: "Trade-in cost / value per card", type: "number", defaultValue: 0 },
+        { name: "price", label: "List price per card", type: "number", defaultValue: 0 },
+        { name: "location", label: "Storage Location" },
+        { name: "note", label: "Trade note / cash difference" },
+      ],
+    });
+    if (!result || !result.name) return;
+
+    setSaving(true);
+    const quantity = Number(result.quantity || 1);
+    const cost = Number(result.cost || 0);
+    const price = Number(result.price || 0);
+    const payload = {
+      company_id: companyId,
+      name: result.name,
+      category: "Others",
+      quantity,
+      card_number: result.cardNumber || "",
+      language: "English",
+      cost,
+      price,
+      purchase_date: new Date().toISOString().slice(0, 10),
+      payment_method: "Trade",
+      seller_name: "Trade Customer",
+      storage_location: result.location || "",
+      status: "Available",
+      notes: result.note || "Trade In",
+      created_by: user?.email,
+    };
+
+    const { data, error } = await supabase.from("cards").insert([payload]).select().single();
+    if (error) {
+      setSaving(false);
+      showToast(error.message, "error");
+      return;
+    }
+    const inventoryId = `VX-${String(data.id).padStart(6, "0")}`;
+    await supabase.from("cards").update({ inventory_id: inventoryId }).eq("id", data.id);
+
+    await addActivityLog({
+      action: "TRADE_IN",
+      inventory_id: inventoryId,
+      card_number: payload.card_number,
+      notes: `Trade in ${quantity} pcs. Value: ${money(cost)} each. ${result.note || ""}`,
+    });
+    await addTransaction({
+      inventory_id: inventoryId,
+      card_number: payload.card_number,
+      transaction_type: "TRADE_IN",
+      quantity,
+      cost: cost * quantity,
+      price: price * quantity,
+      notes: result.note || "Trade in card received",
+    });
+
+    await refreshAll();
+    setSaving(false);
+    showToast("Trade in recorded");
+  };
+
+  const tradeOutCard = async (card) => {
+    if (!canTrade) return showToast("Only owner/admin can create trades", "error");
+    const availableQty = Number(card.quantity || 0);
+    const result = await askModal({
+      title: "Trade out card",
+      message: `${card.name} · Available: ${availableQty}`,
+      confirmText: "Record Trade Out",
+      fields: [
+        { name: "quantity", label: "Trade out quantity", type: "number", defaultValue: 1 },
+        { name: "value", label: "Total trade-out value", type: "number", defaultValue: Number(card.price || 0) },
+        { name: "note", label: "Trade note", placeholder: "Example: traded for Moonbreon + customer added $50" },
+      ],
+    });
+    if (!result) return;
+    const tradeQty = Number(result.quantity || 0);
+    if (tradeQty < 1) return showToast("Quantity must be at least 1", "error");
+    if (tradeQty > availableQty) return showToast("Not enough inventory", "error");
+
+    setSaving(true);
+    const remainingQty = availableQty - tradeQty;
+    const updatePayload = { quantity: remainingQty, status: remainingQty === 0 ? "Sold" : card.status, updated_by: user?.email };
+    const { error } = await supabase.from("cards").update(updatePayload).eq("id", card.id);
+    if (error) {
+      setSaving(false);
+      showToast(error.message, "error");
+      return;
+    }
+
+    await addActivityLog({
+      action: "TRADE_OUT",
+      inventory_id: card.inventory_id,
+      card_number: card.card_number,
+      notes: `Before qty: ${availableQty}; After qty: ${remainingQty}; Trade out ${tradeQty} pcs. Value: ${money(result.value)}. ${result.note || ""}`,
+    });
+    await addTransaction({
+      inventory_id: card.inventory_id,
+      card_number: card.card_number,
+      transaction_type: "TRADE_OUT",
+      quantity: -tradeQty,
+      cost: Number(card.cost || 0) * tradeQty,
+      price: Number(result.value || 0),
+      notes: result.note || "Trade out card given to customer",
+    });
+
+    await refreshAll();
+    setSaving(false);
+    showToast("Trade out recorded");
+  };
+
+  const deleteCard = async (id) => {
+    if (!canDelete) return showToast("Only owner/admin can delete cards", "error");
+    const card = cards.find((c) => c.id === id);
+    const result = await askModal({
+      title: "Delete card",
+      message: `Delete ${card?.name || "this card"}? This cannot be undone from this screen.`,
+      confirmText: "Delete",
+      danger: true,
+      fields: [{ name: "reason", label: "Reason", placeholder: "Duplicate / wrong entry / other" }],
+    });
+    if (!result) return;
+
+    setSaving(true);
+    const { error } = await supabase.from("cards").delete().eq("id", id);
+    if (error) {
+      setSaving(false);
+      showToast(error.message, "error");
+      return;
+    }
+
+    await addActivityLog({
+      action: "DELETE",
+      inventory_id: card?.inventory_id,
+      card_number: card?.card_number,
+      notes: `Deleted card. Before: ${JSON.stringify({ name: card?.name, qty: card?.quantity, cost: card?.cost, price: card?.price, location: card?.storage_location })}. Reason: ${result.reason || "N/A"}`,
+    });
+    await addTransaction({
+      inventory_id: card?.inventory_id,
+      card_number: card?.card_number,
+      transaction_type: "DELETE",
+      quantity: -Number(card?.quantity || 0),
+      cost: Number(card?.cost || 0) * Number(card?.quantity || 0),
+      price: Number(card?.price || 0) * Number(card?.quantity || 0),
+      notes: result.reason || "Card deleted from inventory",
+    });
+
+    await refreshAll();
+    setSaving(false);
+    setSelectedCard(null);
+    setTab("inventory");
+    showToast("Card deleted");
+  };
+
+  const downloadCSV = (filename, headers, rows) => {
+    const csvRows = [
+      headers.join(","),
+      ...rows.map((row) => headers.map((key) => `"${String(row[key] ?? "").replace(/"/g, '""')}"`).join(",")),
+    ];
+    const blob = new Blob([csvRows.join("\n")], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = filename;
+    link.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const exportInventoryCSV = () => downloadCSV("vaultxtcg_inventory.csv", [
+    "inventory_id", "name", "category", "card_number", "language", "quantity", "cost", "price", "status",
+    "purchase_date", "payment_method", "seller_name", "storage_location", "created_by", "updated_by",
+  ], cards.filter((c) => c.status !== "Sold"));
+
+  const exportSalesCSV = () => downloadCSV("vaultxtcg_sales.csv", [
+    "inventory_id", "name", "category", "card_number", "quantity", "cost", "sold_price", "sold_date", "receiving_method", "sold_by",
+  ], cards.filter((c) => c.status === "Sold"));
+
+  const exportActivityLogCSV = () => downloadCSV("vaultxtcg_activity_log.csv", [
+    "created_at", "user_email", "action", "inventory_id", "card_number", "notes",
+  ], activityLogs);
+
+  const exportTransactionsCSV = () => downloadCSV("vaultxtcg_transactions.csv", [
+    "created_at", "user_email", "transaction_type", "inventory_id", "card_number", "quantity", "cost", "price", "notes",
+  ], transactions);
+
+  const downloadExcelTemplate = () => {
+    const template = [{
+      name: "Monkey D. Luffy",
+      category: "One Piece",
+      quantity: 1,
+      card_number: "OP13-108",
+      language: "English",
+      cost: 20,
+      price: 35,
+      purchase_date: "2026-06-12",
+      payment_method: "Cash",
+      seller_name: "Tom",
+      seller_tel: "6261234567",
+      storage_location: "Box A",
+      status: "Available",
+      notes: "Example row",
+    }];
+    const worksheet = XLSX.utils.json_to_sheet(template);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, "Inventory Template");
+    XLSX.writeFile(workbook, "vaultxtcg_import_template.xlsx");
+  };
+
+  const importExcel = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    if (!companyId) return showToast("Company ID not found. Please log in again.", "error");
+
+    setSaving(true);
+    const reader = new FileReader();
+    reader.onload = async (event) => {
+      try {
+        const data = new Uint8Array(event.target.result);
+        const workbook = XLSX.read(data, { type: "array" });
+        const worksheet = workbook.Sheets[workbook.SheetNames[0]];
+        const rows = XLSX.utils.sheet_to_json(worksheet);
+        if (!rows.length) {
+          setSaving(false);
+          return showToast("Excel file is empty", "error");
+        }
+
+        const payload = rows
+          .filter((row) => row.name || row.Name || row.card_number || row["Card Number"])
+          .map((row) => ({
+            company_id: companyId,
+            name: row.name || row.Name || "",
+            category: row.category || row.Category || "Pokemon",
+            card_number: row.card_number || row["Card Number"] || row.cardNumber || row["Card Number / ID"] || "",
+            language: row.language || row.Language || "English",
+            quantity: Number(row.quantity || row.Quantity || row.qty || row.Qty || 1),
+            cost: Number(row.cost || row.Cost || 0),
+            price: Number(row.price || row.Price || 0),
+            purchase_date: row.purchase_date || row["Purchase Date"] || null,
+            payment_method: row.payment_method || row["Payment Method"] || "",
+            seller_name: row.seller_name || row["Seller Name"] || "",
+            seller_tel: row.seller_tel || row["Seller Tel"] || "",
+            storage_location: row.storage_location || row["Storage Location"] || "",
+            status: row.status || row.Status || "Available",
+            notes: row.notes || row.Notes || "",
+            created_by: user?.email,
+          }));
+
+        if (!payload.length) {
+          setSaving(false);
+          return showToast("No valid rows found", "error");
+        }
+
+        const { data: insertedCards, error } = await supabase.from("cards").insert(payload).select();
+        if (error) {
+          setSaving(false);
+          return showToast(error.message, "error");
+        }
+
+        for (const card of insertedCards) {
+          const inventoryId = `VX-${String(card.id).padStart(6, "0")}`;
+          await supabase.from("cards").update({ inventory_id: inventoryId }).eq("id", card.id);
+          await addActivityLog({ action: "IMPORT", inventory_id: inventoryId, card_number: card.card_number, notes: `Imported from Excel. Qty: ${card.quantity}` });
+          await addTransaction({
+            inventory_id: inventoryId,
+            card_number: card.card_number,
+            transaction_type: "IMPORT",
+            quantity: card.quantity,
+            cost: Number(card.cost || 0) * Number(card.quantity || 0),
+            price: Number(card.price || 0) * Number(card.quantity || 0),
+            notes: "Imported from Excel",
+          });
+        }
+
+        await refreshAll();
+        e.target.value = "";
+        setSaving(false);
+        showToast(`${insertedCards.length} cards imported`);
+      } catch (err) {
+        setSaving(false);
+        showToast(`Import failed: ${err.message}`, "error");
+      }
+    };
+    reader.readAsArrayBuffer(file);
+  };
+
+  const filtered = useMemo(() => {
+    const keyword = search.toLowerCase().trim();
+    return cards.filter((c) => {
+      const matchSearch = !keyword || [
+        c.name, c.category, c.card_number, c.inventory_id, c.storage_location, c.status, c.language,
+      ].some((value) => String(value || "").toLowerCase().includes(keyword));
+      if (tab === "inventory") return matchSearch && c.status !== "Sold";
+      return matchSearch;
+    });
+  }, [cards, search, tab]);
+
+  const inventoryCards = cards.filter((c) => c.status !== "Sold");
+  const soldCards = cards.filter((c) => c.status === "Sold");
+  const inventoryQty = inventoryCards.reduce((sum, c) => sum + Number(c.quantity || 0), 0);
+  const totalCost = inventoryCards.reduce((sum, c) => sum + Number(c.cost || 0) * Number(c.quantity || 0), 0);
+  const totalValue = inventoryCards.reduce((sum, c) => sum + Number(c.price || 0) * Number(c.quantity || 0), 0);
+  const soldRevenue = cards.reduce((sum, c) => sum + Number(c.sold_price || 0), 0);
+  const soldCost = soldCards.reduce((sum, c) => sum + Number(c.cost || 0), 0);
+  const today = new Date().toISOString().slice(0, 10);
+  const todaySales = cards.filter((c) => c.sold_date === today).reduce((sum, c) => sum + Number(c.sold_price || 0), 0);
+
+  const styles = {
+    app: { minHeight: "100vh", background: "#0f172a", color: "#e5e7eb", fontFamily: "Inter, Arial, sans-serif" },
+    shell: { display: isMobile ? "block" : "grid", gridTemplateColumns: "260px 1fr", minHeight: "100vh" },
+    sidebar: { background: "#020617", borderRight: "1px solid #1e293b", padding: 18, position: isMobile ? "static" : "sticky", top: 0, height: isMobile ? "auto" : "100vh" },
+    main: { padding: isMobile ? 14 : 24, maxWidth: 1440, width: "100%", boxSizing: "border-box" },
+    topbar: { display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, marginBottom: 18, flexWrap: "wrap" },
+    card: { border: "1px solid #1e293b", background: "#111827", borderRadius: 16, padding: 16, boxShadow: "0 10px 25px rgba(0,0,0,0.18)" },
+    input: { width: "100%", boxSizing: "border-box", padding: "11px 12px", marginBottom: 10, borderRadius: 10, border: "1px solid #334155", background: "#020617", color: "#e5e7eb" },
+    button: { border: "1px solid #334155", background: "#1e293b", color: "#e5e7eb", padding: "9px 12px", borderRadius: 10, cursor: "pointer", fontWeight: 600 },
+    primary: { border: "1px solid #2563eb", background: "#2563eb", color: "white", padding: "9px 12px", borderRadius: 10, cursor: "pointer", fontWeight: 700 },
+    danger: { border: "1px solid #dc2626", background: "#7f1d1d", color: "white", padding: "9px 12px", borderRadius: 10, cursor: "pointer", fontWeight: 700 },
+    muted: { color: "#94a3b8", fontSize: 13 },
+  };
+
+  const NavButton = ({ item }) => (
+    <button
+      type="button"
+      onClick={() => {
+        if (item.key === "stockIn") cancelEdit();
+        setSelectedCard(null);
+        setTab(item.key);
+      }}
+      style={{
+        width: "100%", textAlign: "left", marginBottom: 8, padding: "11px 12px", borderRadius: 12,
+        border: tab === item.key ? "1px solid #3b82f6" : "1px solid transparent",
+        background: tab === item.key ? "#1d4ed8" : "transparent", color: "#e5e7eb", cursor: "pointer", fontWeight: 700,
+      }}
+    >
+      <span style={{ marginRight: 8 }}>{item.icon}</span>{item.label}
+    </button>
+  );
+
+  const StatusBadge = ({ status }) => (
+    <span style={{ padding: "4px 8px", borderRadius: 999, fontSize: 12, fontWeight: 700, background: status === "Sold" ? "#7f1d1d" : status === "Hold" ? "#713f12" : "#064e3b" }}>
+      {status || "Available"}
+    </span>
+  );
+
+  const ActionButtons = ({ card }) => (
+    <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+      <button style={styles.button} onClick={() => { setSelectedCard(card); setTab("detail"); window.scrollTo({ top: 0, behavior: "smooth" }); }}>View</button>
+      {card.status !== "Sold" && <button style={styles.primary} onClick={() => markAsSold(card)}>Sell</button>}
+      {card.status !== "Sold" && <button style={styles.button} onClick={() => startEdit(card)}>Edit</button>}
+      {card.status !== "Sold" && canAdjust && <button style={styles.button} onClick={() => adjustQuantity(card)}>Adjust</button>}
+      {card.status !== "Sold" && canTrade && <button style={styles.button} onClick={() => tradeOutCard(card)}>Trade Out</button>}
+    </div>
+  );
+
+  if (!user) {
+    return (
+      <div style={styles.app}>
+        {toast && <Toast toast={toast} />}
+        <div style={{ maxWidth: 420, margin: "0 auto", padding: "80px 18px" }}>
+          <div style={styles.card}>
+            <h1 style={{ marginTop: 0 }}>Vault X TCG</h1>
+            <div style={{ ...styles.muted, marginBottom: 18 }}>Professional inventory and sales system</div>
+            {authMode === "signup" && <input placeholder="Company Name" value={companyName} onChange={(e) => setCompanyName(e.target.value)} style={styles.input} />}
+            <input placeholder="Email" value={authEmail} onChange={(e) => setAuthEmail(e.target.value)} style={styles.input} />
+            <input placeholder="Password" type="password" value={authPassword} onChange={(e) => setAuthPassword(e.target.value)} style={styles.input} />
+            {authMode === "login" ? (
+              <button disabled={saving} onClick={signIn} style={{ ...styles.primary, width: "100%" }}>{saving ? "Logging in..." : "Login"}</button>
+            ) : (
+              <button disabled={saving} onClick={signUp} style={{ ...styles.primary, width: "100%" }}>{saving ? "Creating..." : "Create Account"}</button>
+            )}
+            <button onClick={() => setAuthMode(authMode === "login" ? "signup" : "login")} style={{ ...styles.button, width: "100%", marginTop: 10 }}>
+              {authMode === "login" ? "Need an account?" : "Already have an account?"}
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div style={styles.app}>
+      {toast && <Toast toast={toast} />}
+      {modal && <Modal modal={modal} setModal={setModal} closeModal={closeModal} styles={styles} />}
+      {saving && <div style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,0.35)", zIndex: 30, display: "grid", placeItems: "center", pointerEvents: "none" }}><div style={styles.card}>Saving...</div></div>}
+
+      <div style={styles.shell}>
+        <aside style={styles.sidebar}>
+          <div style={{ fontSize: 22, fontWeight: 900, marginBottom: 6 }}>Vault X TCG</div>
+          <div style={{ ...styles.muted, marginBottom: 18 }}>{userRole || "user"} · {user?.email}</div>
+          {navItems.map((item) => <NavButton key={item.key} item={item} />)}
+          {canTrade && <button onClick={tradeInCard} style={{ ...styles.primary, width: "100%", marginTop: 8 }}>🔄 New Trade In</button>}
+          <button onClick={logout} style={{ ...styles.button, width: "100%", marginTop: 14 }}>Logout</button>
+        </aside>
+
+        <main style={styles.main}>
+          <div style={styles.topbar}>
+            <div>
+              <h1 style={{ margin: 0 }}>{tab === "stockIn" ? (editingId ? "Edit Card" : "Add Card") : tab === "activityLogs" ? "Activity Logs" : tab === "transactions" ? "Transactions" : tab === "reports" ? "Reports" : tab === "detail" ? "Card Details" : "Inventory"}</h1>
+              <div style={styles.muted}>Reliable inventory, sales, trade, and audit tracking.</div>
+            </div>
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+              <button style={styles.button} onClick={() => refreshAll()}>Refresh</button>
+              <button style={styles.primary} onClick={() => { cancelEdit(); setTab("stockIn"); }}>Add Card</button>
+            </div>
+          </div>
+
+          {loading ? <Skeleton styles={styles} /> : (
+            <>
+              {tab === "inventory" && <InventoryView />}
+              {tab === "stockIn" && <StockInView />}
+              {tab === "detail" && selectedCard && <DetailView />}
+              {tab === "transactions" && <TransactionsView />}
+              {tab === "activityLogs" && <ActivityLogsView />}
+              {tab === "reports" && <ReportsView />}
+            </>
+          )}
+        </main>
+      </div>
+    </div>
+  );
+
+  function DashboardCards() {
+    const items = [
+      { label: "Inventory Qty", value: inventoryQty },
+      { label: "Inventory Cost", value: money(totalCost) },
+      { label: "Inventory Value", value: money(totalValue) },
+      { label: "Today Sales", value: money(todaySales) },
+      { label: "Sold Revenue", value: money(soldRevenue) },
+      { label: "Realized Profit", value: money(soldRevenue - soldCost) },
+    ];
+    return (
+      <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr 1fr" : "repeat(6, 1fr)", gap: 12, marginBottom: 16 }}>
+        {items.map((item) => (
+          <div key={item.label} style={styles.card}>
+            <div style={styles.muted}>{item.label}</div>
+            <div style={{ fontSize: isMobile ? 18 : 24, fontWeight: 900, marginTop: 6 }}>{item.value}</div>
+          </div>
+        ))}
+      </div>
+    );
+  }
+
+  function InventoryView() {
+    return (
+      <>
+        <DashboardCards />
+        <div style={{ ...styles.card, marginBottom: 16 }}>
+          <input placeholder="Search inventory ID, name, category, card number, location, status..." value={search} onChange={(e) => setSearch(e.target.value)} style={{ ...styles.input, marginBottom: 0 }} />
+        </div>
+        {isMobile ? <MobileInventoryCards /> : <DesktopInventoryTable />}
+      </>
+    );
+  }
+
+  function DesktopInventoryTable() {
+    return (
+      <div style={{ ...styles.card, overflowX: "auto", padding: 0 }}>
+        <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 980 }}>
+          <thead>
+            <tr style={{ background: "#020617", color: "#94a3b8", textAlign: "left" }}>
+              {["Image", "Inventory ID", "Name", "Card #", "Qty", "Cost", "Price", "Location", "Status", "Actions"].map((h) => <th key={h} style={{ padding: 12, borderBottom: "1px solid #1e293b" }}>{h}</th>)}
+            </tr>
+          </thead>
+          <tbody>
+            {filtered.length === 0 && <tr><td colSpan="10" style={{ padding: 20, color: "#94a3b8" }}>No cards found.</td></tr>}
+            {filtered.map((c) => (
+              <tr key={c.id} style={{ borderBottom: "1px solid #1e293b" }}>
+                <td style={{ padding: 10 }}>{c.front_image ? <img src={c.front_image} alt="front" style={{ width: 46, height: 64, objectFit: "cover", borderRadius: 8 }} /> : <div style={{ width: 46, height: 64, borderRadius: 8, background: "#020617" }} />}</td>
+                <td style={{ padding: 10, fontWeight: 800 }}>{c.inventory_id || "N/A"}</td>
+                <td style={{ padding: 10 }}>{c.name}</td>
+                <td style={{ padding: 10, color: "#94a3b8" }}>{c.card_number || "N/A"}</td>
+                <td style={{ padding: 10 }}>{c.quantity || 0}</td>
+                <td style={{ padding: 10 }}>{money(c.cost)}</td>
+                <td style={{ padding: 10 }}>{money(c.price)}</td>
+                <td style={{ padding: 10 }}>{c.storage_location || "N/A"}</td>
+                <td style={{ padding: 10 }}><StatusBadge status={c.status} /></td>
+                <td style={{ padding: 10 }}><ActionButtons card={c} /></td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    );
+  }
+
+  function MobileInventoryCards() {
+    return (
+      <div style={{ display: "grid", gap: 12 }}>
+        {filtered.length === 0 && <div style={styles.card}>No cards found.</div>}
+        {filtered.map((c) => (
+          <div key={c.id} style={styles.card}>
+            <div style={{ display: "flex", gap: 12 }}>
+              {c.front_image && <img src={c.front_image} alt="front" style={{ width: 84, height: 116, objectFit: "cover", borderRadius: 10 }} />}
+              <div style={{ flex: 1 }}>
+                <div style={{ ...styles.muted, fontWeight: 800 }}>{c.inventory_id || "N/A"}</div>
+                <h3 style={{ margin: "6px 0" }}>{c.name}</h3>
+                <div style={styles.muted}>{c.card_number || "N/A"}</div>
+                <div style={{ marginTop: 8 }}><StatusBadge status={c.status} /></div>
+              </div>
+            </div>
+            <div style={{ marginTop: 10, display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8 }}>
+              <div><div style={styles.muted}>Qty</div><b>{c.quantity || 0}</b></div>
+              <div><div style={styles.muted}>Cost</div><b>{money(c.cost)}</b></div>
+              <div><div style={styles.muted}>Price</div><b>{money(c.price)}</b></div>
+            </div>
+            <div style={{ marginTop: 12 }}><ActionButtons card={c} /></div>
+          </div>
+        ))}
+      </div>
+    );
+  }
+
+  function StockInView() {
+    return (
+      <form onSubmit={saveCard} style={{ maxWidth: 900 }}>
+        <button type="button" onClick={() => { cancelEdit(); setTab("inventory"); }} style={{ ...styles.button, marginBottom: 14 }}>← Back</button>
+        <FormSection title="Basic Info">
+          <input placeholder="Character Name" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} style={styles.input} />
+          <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 10 }}>
+            <select value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })} style={styles.input}>
+              <option value="Pokemon">Pokemon</option><option value="One Piece">One Piece</option><option value="Others">Others</option>
+            </select>
+            <select value={form.language} onChange={(e) => setForm({ ...form, language: e.target.value })} style={styles.input}>
+              <option value="English">English</option><option value="简中">简中</option><option value="Japanese">Japanese</option><option value="Others">Others</option>
+            </select>
+          </div>
+          <input type="number" min="1" placeholder="Quantity" value={form.quantity} onChange={(e) => setForm({ ...form, quantity: e.target.value })} style={styles.input} />
+          <input placeholder="Card Number / ID e.g. OP13-108" value={form.card_number} onChange={(e) => setForm({ ...form, card_number: e.target.value })} style={styles.input} />
+        </FormSection>
+        <FormSection title="Pricing & Purchase">
+          <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 10 }}>
+            <input placeholder="Cost" value={form.cost} onChange={(e) => setForm({ ...form, cost: e.target.value })} style={styles.input} />
+            <input placeholder="List Price" value={form.price} onChange={(e) => setForm({ ...form, price: e.target.value })} style={styles.input} />
+          </div>
+          <input type="date" value={form.purchase_date} onChange={(e) => setForm({ ...form, purchase_date: e.target.value })} style={styles.input} />
+          <input placeholder="Payment Method" value={form.payment_method} onChange={(e) => setForm({ ...form, payment_method: e.target.value })} style={styles.input} />
+        </FormSection>
+        <FormSection title="Seller Info">
+          <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 10 }}>
+            <input placeholder="Seller Name" value={form.seller_name} onChange={(e) => setForm({ ...form, seller_name: e.target.value })} style={styles.input} />
+            <input placeholder="Seller Tel" value={form.seller_tel} onChange={(e) => setForm({ ...form, seller_tel: e.target.value })} style={styles.input} />
+          </div>
+        </FormSection>
+        <FormSection title="Storage & Status">
+          <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 10 }}>
+            <input placeholder="Storage Location" value={form.storage_location} onChange={(e) => setForm({ ...form, storage_location: e.target.value })} style={styles.input} />
+            <select value={form.status} onChange={(e) => setForm({ ...form, status: e.target.value })} style={styles.input}>
+              <option value="Available">Available</option><option value="Hold">Hold</option><option value="Others">Others</option>
+            </select>
+          </div>
+          <textarea placeholder="Notes" value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} style={{ ...styles.input, minHeight: 90, resize: "vertical" }} />
+        </FormSection>
+        <FormSection title="Images">
+          <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 10 }}>
+            <label>Front Image<br /><input type="file" accept="image/*" onChange={(e) => setFrontFile(e.target.files[0])} /></label>
+            <label>Back Image<br /><input type="file" accept="image/*" onChange={(e) => setBackFile(e.target.files[0])} /></label>
+          </div>
+        </FormSection>
+        <button disabled={saving} type="submit" style={styles.primary}>{saving ? "Saving..." : editingId ? "Update Card" : "Save Card"}</button>
+        {editingId && <button type="button" onClick={cancelEdit} style={{ ...styles.button, marginLeft: 10 }}>Cancel Edit</button>}
+      </form>
+    );
+  }
+
+  function FormSection({ title, children }) {
+    return <div style={{ ...styles.card, marginBottom: 14 }}><h3 style={{ marginTop: 0 }}>{title}</h3>{children}</div>;
+  }
+
+  function DetailView() {
+    const c = selectedCard;
+    return (
+      <div>
+        <button onClick={() => { setSelectedCard(null); setTab("inventory"); }} style={{ ...styles.button, marginBottom: 14 }}>← Back</button>
+        <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "360px 1fr", gap: 16 }}>
+          <div style={styles.card}>
+            <h2 style={{ marginTop: 0 }}>{c.name}</h2>
+            <div style={{ display: "flex", gap: 10, alignItems: "flex-start" }}>
+              {c.front_image && <img src={c.front_image} alt="front" style={{ width: "48%", borderRadius: 12 }} />}
+              {c.back_image && <img src={c.back_image} alt="back" style={{ width: "48%", borderRadius: 12 }} />}
+            </div>
+          </div>
+          <div style={styles.card}>
+            <DetailRow label="Inventory ID" value={c.inventory_id || "N/A"} />
+            <DetailRow label="Category" value={c.category} />
+            <DetailRow label="Card Number" value={c.card_number} />
+            <DetailRow label="Language" value={c.language} />
+            <DetailRow label="Quantity" value={c.quantity || 0} />
+            <DetailRow label="Cost" value={money(c.cost)} />
+            <DetailRow label="List Price" value={money(c.price)} />
+            <DetailRow label="Purchase Date" value={c.purchase_date} />
+            <DetailRow label="Payment" value={c.payment_method} />
+            <DetailRow label="Seller" value={c.seller_name} />
+            <DetailRow label="Seller Tel" value={c.seller_tel} />
+            <DetailRow label="Location" value={c.storage_location} />
+            <DetailRow label="Status" value={<StatusBadge status={c.status} />} />
+            {c.status === "Sold" && <>
+              <DetailRow label="Sold Price" value={money(c.sold_price)} />
+              <DetailRow label="Sold Date" value={c.sold_date} />
+              <DetailRow label="Receiving Method" value={c.receiving_method} />
+              <DetailRow label="Profit" value={money(Number(c.sold_price || 0) - Number(c.cost || 0))} />
+            </>}
+            <DetailRow label="Notes" value={c.notes} />
+            <div style={{ marginTop: 16, display: "flex", gap: 8, flexWrap: "wrap" }}>
+              {c.status !== "Sold" && <button style={styles.button} onClick={() => startEdit(c)}>Edit</button>}
+              {c.status !== "Sold" && <button style={styles.primary} onClick={() => markAsSold(c)}>Mark Sold</button>}
+              {c.status !== "Sold" && canAdjust && <button style={styles.button} onClick={() => adjustQuantity(c)}>Adjust Qty</button>}
+              {c.status !== "Sold" && canTrade && <button style={styles.button} onClick={() => tradeOutCard(c)}>Trade Out</button>}
+              {c.status === "Sold" && canEditSale && <button style={styles.button} onClick={() => editSale(c)}>Edit Sale</button>}
+              {c.status === "Sold" && canEditSale && <button style={styles.button} onClick={() => undoSale(c)}>Undo Sale</button>}
+              <button style={styles.button} onClick={() => window.open(`https://www.tcgplayer.com/search/all/product?q=${encodeURIComponent(`${c.name} ${c.card_number}`)}`, "_blank")}>TCGplayer</button>
+              <button style={styles.button} onClick={() => window.open(`https://www.ebay.com/sch/i.html?_nkw=${encodeURIComponent(`${c.name} ${c.card_number}`)}`, "_blank")}>eBay</button>
+              {canDelete && <button style={styles.danger} onClick={() => deleteCard(c.id)}>Delete</button>}
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  function DetailRow({ label, value }) {
+    return <div style={{ display: "grid", gridTemplateColumns: "150px 1fr", gap: 10, padding: "8px 0", borderBottom: "1px solid #1e293b" }}><div style={styles.muted}>{label}</div><div>{value || "N/A"}</div></div>;
+  }
+
+  function TransactionsView() {
+    return <LogTable rows={transactions} headers={["created_at", "user_email", "transaction_type", "inventory_id", "card_number", "quantity", "cost", "price", "notes"]} />;
+  }
+
+  function ActivityLogsView() {
+    return <LogTable rows={activityLogs} headers={["created_at", "user_email", "action", "inventory_id", "card_number", "notes"]} />;
+  }
+
+  function LogTable({ rows, headers }) {
+    return (
+      <div style={{ ...styles.card, overflowX: "auto", padding: 0 }}>
+        <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 900 }}>
+          <thead><tr style={{ background: "#020617", color: "#94a3b8", textAlign: "left" }}>{headers.map((h) => <th key={h} style={{ padding: 12, borderBottom: "1px solid #1e293b" }}>{h}</th>)}</tr></thead>
+          <tbody>
+            {rows.length === 0 && <tr><td colSpan={headers.length} style={{ padding: 18, color: "#94a3b8" }}>No records found.</td></tr>}
+            {rows.map((row) => <tr key={row.id} style={{ borderBottom: "1px solid #1e293b" }}>{headers.map((h) => <td key={h} style={{ padding: 12, verticalAlign: "top" }}>{h === "created_at" ? fmtDate(row[h]) : h === "cost" || h === "price" ? money(row[h]) : String(row[h] ?? "")}</td>)}</tr>)}
+          </tbody>
+        </table>
+      </div>
+    );
+  }
+
+  function ReportsView() {
+    return (
+      <div>
+        <DashboardCards />
+        <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 16 }}>
+          <div style={styles.card}>
+            <h3 style={{ marginTop: 0 }}>Export Tools</h3>
+            <button onClick={exportInventoryCSV} style={styles.button}>Export Inventory CSV</button>{" "}
+            <button onClick={exportSalesCSV} style={styles.button}>Export Sales CSV</button>{" "}
+            <button onClick={exportActivityLogCSV} style={styles.button}>Export Activity Log CSV</button>{" "}
+            <button onClick={exportTransactionsCSV} style={styles.button}>Export Transactions CSV</button>
+          </div>
+          <div style={styles.card}>
+            <h3 style={{ marginTop: 0 }}>Import Tools</h3>
+            <button type="button" onClick={downloadExcelTemplate} style={styles.button}>Download Excel Template</button>
+            <input type="file" accept=".xlsx,.xls" onChange={importExcel} style={{ display: "block", marginTop: 12 }} />
+          </div>
+        </div>
+      </div>
+    );
+  }
+}
+
+function Toast({ toast }) {
+  return (
+    <div style={{ position: "fixed", top: 16, right: 16, zIndex: 100, padding: "12px 14px", borderRadius: 12, background: toast.type === "error" ? "#7f1d1d" : "#064e3b", color: "white", boxShadow: "0 12px 30px rgba(0,0,0,0.35)", maxWidth: 360 }}>
+      {toast.message}
+    </div>
+  );
+}
+
+function Modal({ modal, setModal, closeModal, styles }) {
+  const updateValue = (name, value) => {
+    setModal((prev) => ({ ...prev, values: { ...prev.values, [name]: value } }));
+  };
+
+  return (
+    <div style={{ position: "fixed", inset: 0, background: "rgba(2,6,23,0.72)", zIndex: 80, display: "grid", placeItems: "center", padding: 16 }}>
+      <div style={{ ...styles.card, width: "100%", maxWidth: 480 }}>
+        <h2 style={{ marginTop: 0 }}>{modal.title}</h2>
+        {modal.message && <div style={{ color: "#94a3b8", marginBottom: 14 }}>{modal.message}</div>}
+        {modal.fields.map((field) => (
+          <label key={field.name} style={{ display: "block", marginBottom: 10 }}>
+            <div style={{ marginBottom: 5, fontWeight: 700 }}>{field.label}</div>
+            <input
+              type={field.type || "text"}
+              placeholder={field.placeholder || ""}
+              value={modal.values[field.name] ?? ""}
+              onChange={(e) => updateValue(field.name, e.target.value)}
+              style={styles.input}
+            />
+          </label>
+        ))}
+        <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 12 }}>
+          <button style={styles.button} onClick={() => closeModal(null)}>Cancel</button>
+          <button style={modal.danger ? styles.danger : styles.primary} onClick={() => closeModal(modal.values)}>{modal.confirmText || "Confirm"}</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function Skeleton({ styles }) {
+  return (
+    <div style={{ display: "grid", gap: 12 }}>
+      <div style={styles.card}>Loading data...</div>
+      <div style={styles.card}>Preparing inventory dashboard...</div>
+    </div>
+  );
+}
