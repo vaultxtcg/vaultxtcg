@@ -171,6 +171,7 @@ export default function App() {
   const [companyId, setCompanyId] = useState(null);
   const [userRole, setUserRole] = useState(null);
   const [isMobile, setIsMobile] = useState(window.innerWidth <= 760);
+  const [showMoreMenu, setShowMoreMenu] = useState(false);
 
   const canAdmin = ["owner", "admin"].includes(userRole);
   const canDelete = canAdmin;
@@ -178,6 +179,11 @@ export default function App() {
   const canEditSale = canAdmin;
   const canTrade = canAdmin;
   const canHold = canAdmin;
+
+  const mobilePrimaryNavKeys = ["dashboard", "inventory", "quickAddCard", "cart"];
+  const mobilePrimaryNavItems = navItems.filter((item) => mobilePrimaryNavKeys.includes(item.key));
+  const mobileMoreNavItems = navItems.filter((item) => !mobilePrimaryNavKeys.includes(item.key));
+  const isMoreTabActive = isMobile && !mobilePrimaryNavKeys.includes(tab) && tab !== "detail";
 
   const cartSubtotal = cart.reduce((sum, item) => sum + Number(item.unitPrice || 0) * Number(item.quantity || 0), 0);
   const cartCount = cart.reduce((sum, item) => sum + Number(item.quantity || 0), 0);
@@ -1706,6 +1712,7 @@ export default function App() {
         if (item.key === "stockIn") setForm({ ...emptyForm, category: "Sealed Product" });
         setSelectedCard(null);
         setTab(item.key);
+        if (isMobile && !mobilePrimaryNavKeys.includes(item.key)) setShowMoreMenu(false);
       }}
       style={{
         width: "100%", textAlign: "left", marginBottom: 8, padding: "11px 12px", borderRadius: 12,
@@ -1786,7 +1793,44 @@ export default function App() {
         <aside style={styles.sidebar}>
           <div style={{ fontSize: 22, fontWeight: 900, marginBottom: 6 }}>Vault X TCG</div>
           <div style={{ ...styles.muted, marginBottom: 18 }}>{userRole || "user"} · {user?.email}</div>
-          {navItems.map((item) => <NavButton key={item.key} item={item} />)}
+          {isMobile ? (
+            <>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 8 }}>
+                {mobilePrimaryNavItems.map((item) => (
+                  <NavButton key={item.key} item={item} />
+                ))}
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setShowMoreMenu((prev) => !prev)}
+                style={{
+                  width: "100%",
+                  textAlign: "left",
+                  marginBottom: 8,
+                  padding: "11px 12px",
+                  borderRadius: 12,
+                  border: isMoreTabActive || showMoreMenu ? "1px solid #3b82f6" : "1px solid #334155",
+                  background: isMoreTabActive || showMoreMenu ? "#1d4ed8" : "#1e293b",
+                  color: "#e5e7eb",
+                  cursor: "pointer",
+                  fontWeight: 700,
+                }}
+              >
+                ☰ More {showMoreMenu ? "▲" : "▼"}
+              </button>
+
+              {showMoreMenu && (
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 8 }}>
+                  {mobileMoreNavItems.map((item) => (
+                    <NavButton key={item.key} item={item} />
+                  ))}
+                </div>
+              )}
+            </>
+          ) : (
+            navItems.map((item) => <NavButton key={item.key} item={item} />)
+          )}
           {cartCount > 0 && <button onClick={() => setTab("cart")} style={{ ...styles.primary, width: "100%", marginTop: 8 }}>🛒 Checkout ({cartCount})</button>}
           <button onClick={logout} style={{ ...styles.button, width: "100%", marginTop: 14 }}>Logout</button>
         </aside>
@@ -2136,7 +2180,7 @@ export default function App() {
 
           <div style={{ ...styles.card, marginTop: 10, background: "#020617" }}>
             <h4 style={{ marginTop: 0 }}>Photos</h4>
-            <div style={{ ...styles.muted, marginBottom: 10 }}>Optional, but recommended for raw cards and slabs.</div>
+            <div style={{ ...styles.muted, marginBottom: 10 }}>Please make sure the picture is clear and in foucus </div>
             <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 10 }}>
               <label>Front Image<br /><input type="file" accept="image/*" onChange={(e) => setFrontFile(e.target.files[0])} /></label>
               <label>Back Image<br /><input type="file" accept="image/*" onChange={(e) => setBackFile(e.target.files[0])} /></label>
