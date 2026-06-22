@@ -172,6 +172,10 @@ export default function App() {
   const [userRole, setUserRole] = useState(null);
   const [isMobile, setIsMobile] = useState(window.innerWidth <= 760);
   const [showMoreMenu, setShowMoreMenu] = useState(false);
+  const [cartTaxEnabled, setCartTaxEnabled] = useState(true);
+  const [cartTaxRate, setCartTaxRate] = useState(10.25);
+  const [cartDiscountType, setCartDiscountType] = useState("$");
+  const [cartDiscountValue, setCartDiscountValue] = useState(0);
 
   const canAdmin = ["owner", "admin"].includes(userRole);
   const canDelete = canAdmin;
@@ -187,9 +191,13 @@ export default function App() {
 
   const cartSubtotal = cart.reduce((sum, item) => sum + Number(item.unitPrice || 0) * Number(item.quantity || 0), 0);
   const cartCount = cart.reduce((sum, item) => sum + Number(item.quantity || 0), 0);
-  const taxRate = 0.1025; // Los Angeles County example. Change this if needed.
-  const cartTax = cartSubtotal * taxRate;
-  const cartTotal = cartSubtotal + cartTax;
+  const rawDiscountAmount = cartDiscountType === "%"
+    ? cartSubtotal * (Number(cartDiscountValue || 0) / 100)
+    : Number(cartDiscountValue || 0);
+  const cartDiscountAmount = Math.min(Math.max(rawDiscountAmount, 0), cartSubtotal);
+  const cartTaxableSubtotal = Math.max(0, cartSubtotal - cartDiscountAmount);
+  const cartTax = cartTaxEnabled ? cartTaxableSubtotal * (Number(cartTaxRate || 0) / 100) : 0;
+  const cartTotal = cartTaxableSubtotal + cartTax;
 
   useEffect(() => {
     const handleResize = () => setIsMobile(window.innerWidth <= 760);
@@ -542,6 +550,7 @@ export default function App() {
         inventoryId: card.inventory_id,
         name: card.name,
         cardNumber: card.card_number,
+        image: card.front_image || "",
         quantity,
         unitPrice,
         cost: Number(card.cost || 0),
@@ -553,6 +562,10 @@ export default function App() {
 
   const updateCartQty = (cardId, quantity) => {
     setCart((prev) => prev.map((item) => item.cardId === cardId ? { ...item, quantity: Math.max(1, Number(quantity || 1)) } : item));
+  };
+
+  const updateCartUnitPrice = (cardId, unitPrice) => {
+    setCart((prev) => prev.map((item) => item.cardId === cardId ? { ...item, unitPrice: Math.max(0, Number(unitPrice || 0)) } : item));
   };
 
   const removeFromCart = (cardId) => {
@@ -572,7 +585,7 @@ export default function App() {
 
     const result = await askModal({
       title: "Checkout",
-      message: `Subtotal ${money(cartSubtotal)} · Tax ${money(cartTax)} · Total ${money(cartTotal)}`,
+      message: `Subtotal ${money(cartSubtotal)} · Discount ${money(cartDiscountAmount)} · Tax ${money(cartTax)} · Total ${money(cartTotal)}`,
       confirmText: "Complete Sale",
       fields: [
         { name: "customerName", label: "Customer Name", placeholder: "Walk-in Customer" },
@@ -606,7 +619,7 @@ export default function App() {
       total: finalTotal,
       store_credit_used: storeCreditUsed,
       payment_method: result.paymentMethod || "Cash",
-      notes: result.notes || "",
+      notes: `${result.notes || ""}${result.notes ? " | " : ""}Discount: ${money(cartDiscountAmount)} (${cartDiscountType}${cartDiscountValue || 0}); Tax ${cartTaxEnabled ? "ON" : "OFF"} @ ${cartTaxRate}%`,
       created_by: user?.email,
     }]).select().single();
 
@@ -662,7 +675,7 @@ export default function App() {
         action: "SOLD",
         inventory_id: saleNumber,
         card_number: "MULTI-ITEM",
-        notes: `Checkout completed. Items: ${cart.length}. Subtotal: ${money(cartSubtotal)}. Tax: ${money(cartTax)}. Total: ${money(finalTotal)}. Payment: ${result.paymentMethod || "Cash"}`
+        notes: `Checkout completed. Items: ${cart.length}. Subtotal: ${money(cartSubtotal)}. Discount: ${money(cartDiscountAmount)}. Tax: ${money(cartTax)}. Total: ${money(finalTotal)}. Payment: ${result.paymentMethod || "Cash"}`
       });
 
       setLastReceipt({
@@ -670,6 +683,9 @@ export default function App() {
         created_at: new Date().toISOString(),
         items: cart,
         subtotal: cartSubtotal,
+        discount: cartDiscountAmount,
+        tax_enabled: cartTaxEnabled,
+        tax_rate: cartTaxRate,
         tax: cartTax,
         store_credit_used: storeCreditUsed,
         total: finalTotal,
@@ -2561,21 +2577,83 @@ export default function App() {
             <h3 style={{ marginTop: 0 }}>Cart Items</h3>
             {cart.length === 0 && <div style={styles.muted}>Cart is empty. Go to Inventory and click Add to Cart.</div>}
             {cart.map((item) => (
-              <div key={item.cardId} style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 110px 120px 90px", gap: 10, alignItems: "center", borderTop: "1px solid #1e293b", paddingTop: 12, marginTop: 12 }}>
+              <div
+                key={item.cardId}
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: isMobile ? "76px 1fr" : "76px 1fr 110px 130px 90px",
+                  gap: 10,
+                  alignItems: "center",
+                  borderTop: "1px solid #1e293b",
+                  paddingTop: 12,
+                  marginTop: 12,
+                }}
+              >
+                <div>
+                  {item.image ? (
+                    <img
+                      loading="lazy"
+                      src={item.image}
+                      alt={item.name}
+                      style={{ width: 64, height: 88, objectFit: "cover", borderRadius: 10, border: "1px solid #1e293b" }}
+                    />
+                  ) : (
+                    <div style={{ width: 64, height: 88, borderRadius: 10, background: "#020617", border: "1px solid #1e293b", display: "grid", placeItems: "center", color: "#64748b", fontSize: 12 }}>No Image</div>
+                  )}
+                </div>
                 <div>
                   <b>{item.name}</b>
                   <div style={styles.muted}>{item.inventoryId} · {item.cardNumber || "N/A"} · Available {item.availableQty}</div>
+                  {isMobile && (
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginTop: 10 }}>
+                      <label>
+                        <div style={styles.muted}>Qty</div>
+                        <input type="number" min="1" max={item.availableQty} value={item.quantity} onChange={(e) => updateCartQty(item.cardId, e.target.value)} style={{ ...styles.input, marginBottom: 0 }} />
+                      </label>
+                      <label>
+                        <div style={styles.muted}>Unit Price</div>
+                        <input type="number" min="0" value={item.unitPrice} onChange={(e) => updateCartUnitPrice(item.cardId, e.target.value)} style={{ ...styles.input, marginBottom: 0 }} />
+                      </label>
+                    </div>
+                  )}
+                  {isMobile && <button style={{ ...styles.button, marginTop: 8 }} onClick={() => removeFromCart(item.cardId)}>Remove</button>}
                 </div>
-                <input type="number" min="1" max={item.availableQty} value={item.quantity} onChange={(e) => updateCartQty(item.cardId, e.target.value)} style={{ ...styles.input, marginBottom: 0 }} />
-                <input type="number" min="0" value={item.unitPrice} onChange={(e) => setCart((prev) => prev.map((x) => x.cardId === item.cardId ? { ...x, unitPrice: Number(e.target.value || 0) } : x))} style={{ ...styles.input, marginBottom: 0 }} />
-                <button style={styles.button} onClick={() => removeFromCart(item.cardId)}>Remove</button>
+                {!isMobile && <input type="number" min="1" max={item.availableQty} value={item.quantity} onChange={(e) => updateCartQty(item.cardId, e.target.value)} style={{ ...styles.input, marginBottom: 0 }} />}
+                {!isMobile && <input type="number" min="0" value={item.unitPrice} onChange={(e) => updateCartUnitPrice(item.cardId, e.target.value)} style={{ ...styles.input, marginBottom: 0 }} />}
+                {!isMobile && <button style={styles.button} onClick={() => removeFromCart(item.cardId)}>Remove</button>}
               </div>
             ))}
           </div>
+
           <div style={styles.card}>
             <h3 style={{ marginTop: 0 }}>Checkout</h3>
             <DetailRow label="Items" value={cartCount} />
             <DetailRow label="Subtotal" value={money(cartSubtotal)} />
+
+            <div style={{ borderBottom: "1px solid #1e293b", padding: "8px 0" }}>
+              <div style={{ ...styles.muted, marginBottom: 6 }}>Discount</div>
+              <div style={{ display: "grid", gridTemplateColumns: "86px 1fr", gap: 8 }}>
+                <select value={cartDiscountType} onChange={(e) => setCartDiscountType(e.target.value)} style={{ ...styles.input, marginBottom: 0 }}>
+                  <option value="$">$ Off</option>
+                  <option value="%">% Off</option>
+                </select>
+                <input type="number" min="0" value={cartDiscountValue} onChange={(e) => setCartDiscountValue(e.target.value)} style={{ ...styles.input, marginBottom: 0 }} />
+              </div>
+              <div style={{ ...styles.muted, marginTop: 6 }}>Discount Amount: {money(cartDiscountAmount)}</div>
+            </div>
+
+            <div style={{ borderBottom: "1px solid #1e293b", padding: "8px 0" }}>
+              <label style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 8 }}>
+                <input type="checkbox" checked={cartTaxEnabled} onChange={(e) => setCartTaxEnabled(e.target.checked)} />
+                <b>Charge Tax</b>
+              </label>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr auto", gap: 8, alignItems: "center" }}>
+                <input type="number" min="0" step="0.01" value={cartTaxRate} onChange={(e) => setCartTaxRate(e.target.value)} disabled={!cartTaxEnabled} style={{ ...styles.input, marginBottom: 0, opacity: cartTaxEnabled ? 1 : 0.5 }} />
+                <span style={styles.muted}>%</span>
+              </div>
+            </div>
+
+            <DetailRow label="Taxable Subtotal" value={money(cartTaxableSubtotal)} />
             <DetailRow label="Tax" value={money(cartTax)} />
             <DetailRow label="Total" value={money(cartTotal)} />
             <button disabled={!cart.length || saving} style={{ ...styles.primary, width: "100%", marginTop: 12 }} onClick={completeCheckout}>Complete Sale</button>
@@ -2613,6 +2691,9 @@ export default function App() {
               created_at: sale.created_at,
               customer_name: sale.customer_name,
               subtotal: sale.subtotal,
+              discount: 0,
+              tax_enabled: Number(sale.tax || 0) > 0,
+              tax_rate: cartTaxRate,
               tax: sale.tax,
               store_credit_used: sale.store_credit_used,
               total: sale.total,
@@ -2851,19 +2932,27 @@ function ReceiptModal({ receipt, close, styles }) {
   const printReceipt = () => window.print();
   return (
     <div style={{ position: "fixed", inset: 0, background: "rgba(2,6,23,0.72)", zIndex: 90, display: "grid", placeItems: "center", padding: 16 }}>
-      <div style={{ ...styles.card, width: "100%", maxWidth: 480 }}>
+      <div style={{ ...styles.card, width: "100%", maxWidth: 520 }}>
         <h2 style={{ marginTop: 0 }}>Vault X TCG Receipt</h2>
         <div style={{ color: "#94a3b8", marginBottom: 12 }}>{receipt.sale_number} · {new Date(receipt.created_at).toLocaleString()}</div>
         <div style={{ marginBottom: 12 }}>Customer: {receipt.customer_name || "Walk-in Customer"}</div>
         {(receipt.items || []).map((item, index) => (
-          <div key={index} style={{ display: "flex", justifyContent: "space-between", borderBottom: "1px solid #1e293b", padding: "7px 0", gap: 10 }}>
-            <div>{item.name}<div style={{ color: "#94a3b8", fontSize: 12 }}>{item.inventoryId} · Qty {item.quantity}</div></div>
+          <div key={index} style={{ display: "grid", gridTemplateColumns: "52px 1fr auto", borderBottom: "1px solid #1e293b", padding: "8px 0", gap: 10, alignItems: "center" }}>
+            <div>
+              {item.image ? (
+                <img src={item.image} alt={item.name} style={{ width: 42, height: 58, objectFit: "cover", borderRadius: 6 }} />
+              ) : (
+                <div style={{ width: 42, height: 58, borderRadius: 6, background: "#020617" }} />
+              )}
+            </div>
+            <div>{item.name}<div style={{ color: "#94a3b8", fontSize: 12 }}>{item.inventoryId} · Qty {item.quantity} · Unit {money(item.unitPrice)}</div></div>
             <div>{money(Number(item.unitPrice || 0) * Number(item.quantity || 0))}</div>
           </div>
         ))}
         <div style={{ marginTop: 12 }}>
           <div style={{ display: "flex", justifyContent: "space-between" }}><span>Subtotal</span><b>{money(receipt.subtotal)}</b></div>
-          <div style={{ display: "flex", justifyContent: "space-between" }}><span>Tax</span><b>{money(receipt.tax)}</b></div>
+          <div style={{ display: "flex", justifyContent: "space-between" }}><span>Discount</span><b>-{money(receipt.discount || 0)}</b></div>
+          <div style={{ display: "flex", justifyContent: "space-between" }}><span>Tax {receipt.tax_enabled === false ? "(Off)" : receipt.tax_rate ? `(${receipt.tax_rate}%)` : ""}</span><b>{money(receipt.tax)}</b></div>
           <div style={{ display: "flex", justifyContent: "space-between" }}><span>Store Credit Used</span><b>{money(receipt.store_credit_used)}</b></div>
           <div style={{ display: "flex", justifyContent: "space-between", fontSize: 20, marginTop: 8 }}><span>Total</span><b>{money(receipt.total)}</b></div>
           <div style={{ color: "#94a3b8", marginTop: 8 }}>Payment: {receipt.payment_method}</div>
