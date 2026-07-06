@@ -31,6 +31,8 @@ import {
 import { ADMIN_ROLES, OWNER_ROLE } from "./config/permissions";
 import { importExcelFile } from "./utils/export";
 import * as cartCalculations from "./services/cartCalculations";
+import { addActivityLog as addActivityLogService } from "./services/activityService";
+import { addTransaction as addTransactionService } from "./services/transactionService";
 import { Toast, Modal, Skeleton, ReceiptModal } from "./components/Common";
 import Sidebar from "./components/Sidebar";
 import TopBar from "./components/TopBar";
@@ -360,29 +362,13 @@ export default function App() {
     if (companyId && !loading) ensureTabData(tab, companyId);
   }, [tab, companyId, loading, ensureTabData]);
 
-  const addActivityLog = async ({ action, inventory_id, card_number, notes }) => {
-    const { error } = await supabase.from("activity_log").insert([
-      { company_id: companyId, user_email: user?.email, action, inventory_id, card_number, notes },
-    ]);
-    if (error) console.error("Activity Log Error:", error);
-  };
+  const addActivityLog = useCallback(async ({ action, inventory_id, card_number, notes }) => {
+    await addActivityLogService(companyId, user?.email, { action, inventory_id, card_number, notes });
+  }, [companyId, user?.email]);
 
-  const addTransaction = async ({ inventory_id, card_number, transaction_type, quantity, cost, price, notes }) => {
-    const { error } = await supabase.from("inventory_transactions").insert([
-      {
-        company_id: companyId,
-        inventory_id,
-        card_number,
-        transaction_type,
-        quantity: Number(quantity || 0),
-        cost: Number(cost || 0),
-        price: Number(price || 0),
-        notes,
-        user_email: user?.email,
-      },
-    ]);
-    if (error) console.error("Transaction Error:", error);
-  };
+  const addTransaction = useCallback(async ({ inventory_id, card_number, transaction_type, quantity, cost, price, notes }) => {
+    await addTransactionService(companyId, user?.email, { inventory_id, card_number, transaction_type, quantity, cost, price, notes });
+  }, [companyId, user?.email]);
 
   const { updateCardStatus, deleteCard } = useInventoryActions({
     canHold,
