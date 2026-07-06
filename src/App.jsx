@@ -6,18 +6,15 @@ import {
   CARD_STATUS_AVAILABLE,
   CARD_STATUS_SOLD,
   DEFAULT_TAB,
-  DEFAULT_WALK_IN_CUSTOMER,
   DOCUMENT_NUMBER_PAD_LENGTH,
   FORM_STATUS_PLACEHOLDER,
   INVENTORY_ID_PAD_LENGTH,
   INVENTORY_ID_PREFIX,
   MOBILE_BREAKPOINT,
-  SALE_NUMBER_PREFIX,
   TRADE_NUMBER_PREFIX,
 } from "./config/constants";
 import { DEFAULT_LANGUAGE } from "./config/languages";
 import {
-  DEFAULT_PAYMENT_METHOD,
   DEFAULT_TRADE_CUSTOMER,
   RECEIVING_METHOD_PLACEHOLDER,
   TRADE_PAYMENT_METHOD,
@@ -44,6 +41,7 @@ import { useInventoryEditor } from "./features/inventory/useInventoryEditor";
 import { useInventoryActions } from "./features/inventory/useInventoryActions";
 import { useInventorySave } from "./features/inventory/useInventorySave";
 import { useCart } from "./features/cart/useCart";
+import { useCheckout } from "./features/checkout/hooks/useCheckout";
 
 export default function App() {
   const [cards, setCards] = useState([]);
@@ -412,6 +410,29 @@ export default function App() {
     refreshAll,
   });
 
+  const { completeCheckout } = useCheckout({
+    cart,
+    setCart,
+    cartSubtotal,
+    cartDiscountAmount,
+    cartTax,
+    cartTotal,
+    cartTaxEnabled,
+    cartTaxRate,
+    cartDiscountType,
+    cartDiscountValue,
+    cards,
+    customers,
+    companyId,
+    user,
+    askModal,
+    showToast,
+    setSaving,
+    setLastReceipt,
+    setTab,
+    refreshAll,
+  });
+
   const signIn = async () => {
     setSaving(true);
     const { error } = await supabase.auth.signInWithPassword({ email: authEmail, password: authPassword });
@@ -440,97 +461,6 @@ export default function App() {
   };
 
   const logout = async () => { await supabase.auth.signOut(); };
-
-  const upsertCustomer = async ({ name, tel, totalSpendDelta = 0, storeCreditDelta = 0 }) => {
-    const cleanName = (name || "").trim();
-    const cleanTel = (tel || "").trim();
-    if (!cleanName && !cleanTel) return null;
-    const existing = customers.find((c) => (cleanTel && c.tel === cleanTel) || (cleanName && c.name?.toLowerCase() === cleanName.toLowerCase()));
-    if (existing) {
-      const updatePayload = {
-        name: cleanName || existing.name,
-        tel: cleanTel || existing.tel,
-        total_spend: Number(existing.total_spend || 0) + Number(totalSpendDelta || 0),
-        store_credit: Number(existing.store_credit || 0) + Number(storeCreditDelta || 0),
-        updated_at: new Date().toISOString(),
-      };
-      await supabase.from("customers").update(updatePayload).eq("id", existing.id);
-      return { ...existing, ...updatePayload };
-    }
-    const { data, error } = await supabase.from("customers").insert([{
-      company_id: companyId, name: cleanName || DEFAULT_WALK_IN_CUSTOMER, tel: cleanTel,
-      total_spend: Number(totalSpendDelta || 0), store_credit: Number(storeCreditDelta || 0), created_by: user?.email,
-    }]).select().single();
-    if (error) { console.error("Customer upsert error:", error); return null; }
-    return data;
-  };
-
-  const completeCheckout = async () => {
-    if (!cart.length) return showToast("Cart is empty", "error");
-    for (const item of cart) {
-      const currentCard = cards.find((c) => c.id === item.cardId);
-      if (!currentCard) return showToast(`${item.name} not found`, "error");
-      if (Number(item.quantity || 0) > Number(currentCard.quantity || 0)) return showToast(`Not enough inventory for ${item.name}`, "error");
-    }
-    const result = await askModal({
-      title: "Checkout",
-      message: `Subtotal ${money(cartSubtotal)} · Discount ${money(cartDiscountAmount)} · Tax ${money(cartTax)} · Total ${money(cartTotal)}`,
-      confirmText: "Complete Sale",
-      fields: [
-        { name: "customerName", label: "Customer Name", placeholder: DEFAULT_WALK_IN_CUSTOMER },
-        { name: "customerTel", label: "Customer Tel" },
-        { name: "paymentMethod", label: "Payment Method", defaultValue: DEFAULT_PAYMENT_METHOD },
-        { name: "storeCreditUsed", label: "Store Credit Used", type: "number", defaultValue: 0 },
-        { name: "notes", label: "Sale Notes" },
-      ],
-    });
-    if (!result) return;
-    const storeCreditUsed = Number(result.storeCreditUsed || 0);
-    const finalTotal = Math.max(0, cartTotal - storeCreditUsed);
-    setSaving(true);
-    const customer = await upsertCustomer({ name: result.customerName, tel: result.customerTel, totalSpendDelta: finalTotal, storeCreditDelta: -storeCreditUsed });
-    const { data: sale, error: saleError } = await supabase.from("sales").insert([{
-      company_id: companyId, customer_id: customer?.id || null,
-      customer_name: result.customerName || DEFAULT_WALK_IN_CUSTOMER, customer_tel: result.customerTel || "",
-      subtotal: cartSubtotal, tax: cartTax, total: finalTotal, store_credit_used: storeCreditUsed,
-      payment_method: result.paymentMethod || DEFAULT_PAYMENT_METHOD,
-      notes: `${result.notes || ""}${result.notes ? " | " : ""}Discount: ${money(cartDiscountAmount)} (${cartDiscountType}${cartDiscountValue || 0}); Tax ${cartTaxEnabled ? "ON" : "OFF"} @ ${cartTaxRate}%`,
-      created_by: user?.email,
-    }]).select().single();
-    if (saleError) { setSaving(false); showToast(saleError.message, "error"); return; }
-    const saleNumber = `${SALE_NUMBER_PREFIX}${String(sale.id).padStart(DOCUMENT_NUMBER_PAD_LENGTH, "0")}`;
-    await supabase.from("sales").update({ sale_number: saleNumber }).eq("id", sale.id);
-    try {
-      for (const item of cart) {
-        const currentCard = cards.find((c) => c.id === item.cardId);
-        const oldQty = Number(currentCard.quantity || 0);
-        const newQty = oldQty - Number(item.quantity || 0);
-        const { error: updateError } = await supabase.from("cards").update({
-          quantity: newQty, status: newQty === 0 ? CARD_STATUS_SOLD : currentCard.status,
-          sold_price: Number(currentCard.sold_price || 0) + Number(item.unitPrice || 0) * Number(item.quantity || 0),
-          sold_date: new Date().toISOString().slice(0, 10), receiving_method: result.paymentMethod || DEFAULT_PAYMENT_METHOD,
-          sold_by: user?.email, updated_by: user?.email,
-        }).eq("id", currentCard.id);
-        if (updateError) throw updateError;
-        await supabase.from("sale_items").insert([{
-          sale_id: sale.id, inventory_id: item.inventoryId, card_name: item.name, card_number: item.cardNumber || "",
-          quantity: Number(item.quantity || 0), unit_price: Number(item.unitPrice || 0),
-          total_price: Number(item.unitPrice || 0) * Number(item.quantity || 0), cost: Number(item.cost || 0) * Number(item.quantity || 0),
-        }]);
-        await addTransaction({ inventory_id: item.inventoryId, card_number: item.cardNumber, transaction_type: "SELL", quantity: -Number(item.quantity || 0), cost: Number(item.cost || 0) * Number(item.quantity || 0), price: Number(item.unitPrice || 0) * Number(item.quantity || 0), notes: `${saleNumber} checkout via ${result.paymentMethod || DEFAULT_PAYMENT_METHOD}` });
-      }
-      await addActivityLog({ action: "SOLD", inventory_id: saleNumber, card_number: "MULTI-ITEM", notes: `Checkout completed. Items: ${cart.length}. Subtotal: ${money(cartSubtotal)}. Discount: ${money(cartDiscountAmount)}. Tax: ${money(cartTax)}. Total: ${money(finalTotal)}. Payment: ${result.paymentMethod || DEFAULT_PAYMENT_METHOD}` });
-      setLastReceipt({ sale_number: saleNumber, created_at: new Date().toISOString(), items: cart, subtotal: cartSubtotal, discount: cartDiscountAmount, tax_enabled: cartTaxEnabled, tax_rate: cartTaxRate, tax: cartTax, store_credit_used: storeCreditUsed, total: finalTotal, payment_method: result.paymentMethod || DEFAULT_PAYMENT_METHOD, customer_name: result.customerName || DEFAULT_WALK_IN_CUSTOMER });
-      setCart([]);
-      await refreshAll();
-      setSaving(false);
-      setTab("sales");
-      showToast(`${saleNumber} completed`);
-    } catch (err) {
-      setSaving(false);
-      showToast(`Checkout failed: ${err.message}`, "error");
-    }
-  };
 
   const getItemActivity = (card) => {
     const inventoryId = card?.inventory_id || "";
