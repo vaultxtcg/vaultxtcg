@@ -1,7 +1,7 @@
-import { DEFAULT_TAB } from "../../config/constants";
-import { DEFAULT_CATEGORY } from "../../config/categories";
-import { emptyForm } from "../../utils/helpers";
-import { saveCard as saveCardService, validateSaveCard } from "../../services/inventoryService";
+import { DEFAULT_TAB } from "../../../config/constants";
+import { DEFAULT_CATEGORY } from "../../../config/categories";
+import { emptyForm } from "../../../utils/helpers";
+import { saveCard as saveCardService, validateSaveCard } from "../services/inventoryService";
 
 export function useInventorySave({
   form,

@@ -1,5 +1,5 @@
-import { supabase } from "../../lib/supabase";
-import { CARD_STATUS_AVAILABLE, CARD_STATUS_HOLD, DEFAULT_TAB } from "../../config/constants";
+import { supabase } from "../../../lib/supabase";
+import { CARD_STATUS_AVAILABLE, CARD_STATUS_HOLD, DEFAULT_TAB } from "../../../config/constants";
 
 export function useInventoryActions({
   canHold,

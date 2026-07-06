@@ -4,8 +4,8 @@ import {
   DEFAULT_CART_TAX_RATE,
   DEFAULT_CART_DISCOUNT_TYPE,
   DEFAULT_CART_DISCOUNT_VALUE,
-} from "../../config/tax";
-import * as cartCalculations from "../../services/cartCalculations";
+} from "../../../config/tax";
+import * as cartCalculations from "../services/cartCalculations";
 
 export function useCart({ askModal, showToast }) {
   const [cart, setCart] = useState([]);

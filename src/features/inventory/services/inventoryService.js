@@ -8,10 +8,10 @@
  * This service will eventually own all Inventory operations.
  */
 
-import { supabase } from "../lib/supabase";
-import { INVENTORY_ID_PAD_LENGTH, INVENTORY_ID_PREFIX } from "../config/constants";
-import { diffObjects, money } from "../utils/helpers";
-import { uploadFile } from "../utils/image";
+import { supabase } from "../../../lib/supabase";
+import { INVENTORY_ID_PAD_LENGTH, INVENTORY_ID_PREFIX } from "../../../config/constants";
+import { diffObjects, money } from "../../../utils/helpers";
+import { uploadFile } from "../../../utils/image";
 
 export function validateSaveCard(form, companyId) {
   if (!form.name.trim()) return { success: false, error: "Item Name is required" };

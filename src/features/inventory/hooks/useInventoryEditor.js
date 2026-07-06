@@ -1,7 +1,7 @@
-import { CARD_STATUS_AVAILABLE } from "../../config/constants";
-import { DEFAULT_CATEGORY } from "../../config/categories";
-import { DEFAULT_LANGUAGE } from "../../config/languages";
-import { emptyForm } from "../../utils/helpers";
+import { CARD_STATUS_AVAILABLE } from "../../../config/constants";
+import { DEFAULT_CATEGORY } from "../../../config/categories";
+import { DEFAULT_LANGUAGE } from "../../../config/languages";
+import { emptyForm } from "../../../utils/helpers";
 
 export function useInventoryEditor({
   editingId,

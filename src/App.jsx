@@ -6,18 +6,11 @@ import {
   CARD_STATUS_AVAILABLE,
   CARD_STATUS_SOLD,
   DEFAULT_TAB,
-  DOCUMENT_NUMBER_PAD_LENGTH,
   FORM_STATUS_PLACEHOLDER,
-  INVENTORY_ID_PAD_LENGTH,
-  INVENTORY_ID_PREFIX,
   MOBILE_BREAKPOINT,
-  TRADE_NUMBER_PREFIX,
 } from "./config/constants";
-import { DEFAULT_LANGUAGE } from "./config/languages";
 import {
-  DEFAULT_TRADE_CUSTOMER,
   RECEIVING_METHOD_PLACEHOLDER,
-  TRADE_PAYMENT_METHOD,
 } from "./config/paymentMethods";
 import { ADMIN_ROLES, OWNER_ROLE } from "./config/permissions";
 import { importExcelFile } from "./utils/export";
@@ -37,11 +30,12 @@ import CustomersView from "./components/CustomersView";
 import TradesView from "./components/TradesView";
 import ActivityLogsView, { TransactionsView } from "./components/ActivityLogsView";
 import ReportsView, { InventoryCountView } from "./components/ReportsView";
-import { useInventoryEditor } from "./features/inventory/useInventoryEditor";
-import { useInventoryActions } from "./features/inventory/useInventoryActions";
-import { useInventorySave } from "./features/inventory/useInventorySave";
-import { useCart } from "./features/cart/useCart";
+import { useInventoryEditor } from "./features/inventory/hooks/useInventoryEditor";
+import { useInventoryActions } from "./features/inventory/hooks/useInventoryActions";
+import { useInventorySave } from "./features/inventory/hooks/useInventorySave";
+import { useCart } from "./features/cart/hooks/useCart";
 import { useCheckout } from "./features/checkout/hooks/useCheckout";
+import { useTrade } from "./features/trade/hooks/useTrade";
 
 export default function App() {
   const [cards, setCards] = useState([]);
@@ -433,6 +427,17 @@ export default function App() {
     refreshAll,
   });
 
+  const { createTradeDeal } = useTrade({
+    cards,
+    companyId,
+    user,
+    canTrade,
+    showToast,
+    setSaving,
+    setTab,
+    refreshAll,
+  });
+
   const signIn = async () => {
     setSaving(true);
     const { error } = await supabase.auth.signInWithPassword({ email: authEmail, password: authPassword });
@@ -617,62 +622,6 @@ export default function App() {
     setTab(DEFAULT_TAB);
     setSelectedCard(null);
     showToast("Sale undone");
-  };
-
-  const createTradeDeal = async ({ customerName, customerTel, cashDifference, notes, inItems, outItems }) => {
-    if (!canTrade) return showToast("Only owner/admin can create trades", "error");
-    if (!companyId) return showToast("Company ID not found. Please log in again.", "error");
-    if (!inItems.length && !outItems.length) return showToast("Please add at least one trade item", "error");
-    for (const item of inItems) {
-      if (!item.name?.trim()) return showToast("Trade-in card name is required", "error");
-      if (Number(item.quantity || 0) < 1) return showToast("Trade-in quantity must be at least 1", "error");
-    }
-    for (const item of outItems) {
-      const currentCard = cards.find((c) => c.id === item.cardId);
-      if (!currentCard) return showToast("A trade-out card was not found in inventory", "error");
-      if (Number(item.quantity || 0) < 1) return showToast("Trade-out quantity must be at least 1", "error");
-      if (Number(item.quantity || 0) > Number(currentCard.quantity || 0)) return showToast(`Not enough inventory for ${currentCard.name}`, "error");
-    }
-    setSaving(true);
-    const { data: deal, error: dealError } = await supabase.from("trade_deals").insert([{ company_id: companyId, customer_name: customerName || "", customer_tel: customerTel || "", cash_difference: Number(cashDifference || 0), notes: notes || "", created_by: user?.email }]).select().single();
-    if (dealError) { setSaving(false); showToast(dealError.message, "error"); return; }
-    const tradeNumber = `${TRADE_NUMBER_PREFIX}${String(deal.id).padStart(DOCUMENT_NUMBER_PAD_LENGTH, "0")}`;
-    await supabase.from("trade_deals").update({ trade_number: tradeNumber }).eq("id", deal.id);
-    try {
-      for (const item of inItems) {
-        const quantity = Number(item.quantity || 1);
-        const tradeValue = Number(item.tradeValue || 0);
-        const listPrice = Number(item.listPrice || tradeValue || 0);
-        const cardPayload = { company_id: companyId, name: item.name, category: item.category || "Others", quantity, card_number: item.cardNumber || "", language: item.language || DEFAULT_LANGUAGE, cost: quantity ? tradeValue / quantity : tradeValue, price: listPrice, purchase_date: new Date().toISOString().slice(0, 10), payment_method: TRADE_PAYMENT_METHOD, seller_name: customerName || DEFAULT_TRADE_CUSTOMER, seller_tel: customerTel || "", storage_location: item.location || "", status: CARD_STATUS_AVAILABLE, notes: `${tradeNumber} trade in. ${item.notes || ""}`, created_by: user?.email };
-        const { data: newCard, error: cardError } = await supabase.from("cards").insert([cardPayload]).select().single();
-        if (cardError) throw cardError;
-        const inventoryId = `${INVENTORY_ID_PREFIX}${String(newCard.id).padStart(INVENTORY_ID_PAD_LENGTH, "0")}`;
-        await supabase.from("cards").update({ inventory_id: inventoryId }).eq("id", newCard.id);
-        await supabase.from("trade_items").insert([{ trade_id: deal.id, inventory_id: inventoryId, card_name: item.name, card_number: item.cardNumber || "", quantity, trade_value: tradeValue, direction: "IN" }]);
-        await addTransaction({ inventory_id: inventoryId, card_number: item.cardNumber || "", transaction_type: "TRADE_IN", quantity, cost: tradeValue, price: listPrice * quantity, notes: `${tradeNumber} trade in from ${customerName || "customer"}` });
-      }
-      for (const item of outItems) {
-        const currentCard = cards.find((c) => c.id === item.cardId);
-        const quantity = Number(item.quantity || 1);
-        const tradeValue = Number(item.tradeValue || 0);
-        const oldQty = Number(currentCard.quantity || 0);
-        const newQty = oldQty - quantity;
-        const { error: updateError } = await supabase.from("cards").update({ quantity: newQty, status: newQty === 0 ? CARD_STATUS_SOLD : currentCard.status, updated_by: user?.email }).eq("id", currentCard.id);
-        if (updateError) throw updateError;
-        await supabase.from("trade_items").insert([{ trade_id: deal.id, inventory_id: currentCard.inventory_id, card_name: currentCard.name, card_number: currentCard.card_number || "", quantity, trade_value: tradeValue, direction: "OUT" }]);
-        await addTransaction({ inventory_id: currentCard.inventory_id, card_number: currentCard.card_number, transaction_type: "TRADE_OUT", quantity: -quantity, cost: Number(currentCard.cost || 0) * quantity, price: tradeValue, notes: `${tradeNumber} trade out to ${customerName || "customer"}` });
-      }
-      const inTotal = inItems.reduce((sum, item) => sum + Number(item.tradeValue || 0), 0);
-      const outTotal = outItems.reduce((sum, item) => sum + Number(item.tradeValue || 0), 0);
-      await addActivityLog({ action: "TRADE", inventory_id: tradeNumber, card_number: "MULTI-ITEM", notes: `Trade deal created. In: ${inItems.length} item types / ${money(inTotal)}. Out: ${outItems.length} item types / ${money(outTotal)}. Cash difference: ${money(cashDifference)}. Customer: ${customerName || "N/A"}` });
-      await refreshAll();
-      setSaving(false);
-      showToast(`Trade ${tradeNumber} created`);
-      setTab("trades");
-    } catch (err) {
-      setSaving(false);
-      showToast(`Trade failed: ${err.message}`, "error");
-    }
   };
 
   const handleImportExcel = async (e) => {
