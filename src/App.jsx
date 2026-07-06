@@ -10,7 +10,6 @@ import {
 import {
   ACTIVITY_FILTER_ALL,
   CARD_STATUS_AVAILABLE,
-  CARD_STATUS_HOLD,
   CARD_STATUS_SOLD,
   DEFAULT_TAB,
   DEFAULT_WALK_IN_CUSTOMER,
@@ -22,7 +21,6 @@ import {
   SALE_NUMBER_PREFIX,
   TRADE_NUMBER_PREFIX,
 } from "./config/constants";
-import { DEFAULT_CATEGORY } from "./config/categories";
 import { DEFAULT_LANGUAGE } from "./config/languages";
 import {
   DEFAULT_PAYMENT_METHOD,
@@ -31,7 +29,6 @@ import {
   TRADE_PAYMENT_METHOD,
 } from "./config/paymentMethods";
 import { ADMIN_ROLES, OWNER_ROLE } from "./config/permissions";
-import { uploadFile } from "./utils/image";
 import { importExcelFile } from "./utils/export";
 import * as cartCalculations from "./services/cartCalculations";
 import { Toast, Modal, Skeleton, ReceiptModal } from "./components/Common";
@@ -48,6 +45,9 @@ import CustomersView from "./components/CustomersView";
 import TradesView from "./components/TradesView";
 import ActivityLogsView, { TransactionsView } from "./components/ActivityLogsView";
 import ReportsView, { InventoryCountView } from "./components/ReportsView";
+import { useInventoryEditor } from "./features/inventory/useInventoryEditor";
+import { useInventoryActions } from "./features/inventory/useInventoryActions";
+import { useInventorySave } from "./features/inventory/useInventorySave";
 
 export default function App() {
   const [cards, setCards] = useState([]);
@@ -105,6 +105,18 @@ export default function App() {
   const canEditSale = canAdmin;
   const canTrade = canAdmin;
   const canHold = canAdmin;
+
+  const { startEdit, cancelEdit, handleCostChange } = useInventoryEditor({
+    editingId,
+    priceManuallyEdited,
+    setEditingId,
+    setPriceManuallyEdited,
+    setForm,
+    setFrontFile,
+    setBackFile,
+    setSelectedCard,
+    setTab,
+  });
 
   const styles = useMemo(() => getStyles(isMobile), [isMobile]);
 
@@ -372,6 +384,42 @@ export default function App() {
     if (error) console.error("Transaction Error:", error);
   };
 
+  const { updateCardStatus, deleteCard } = useInventoryActions({
+    canHold,
+    canDelete,
+    cards,
+    user,
+    askModal,
+    showToast,
+    setSaving,
+    addActivityLog,
+    addTransaction,
+    refreshAll,
+    setSelectedCard,
+    setTab,
+  });
+
+  const { saveCard } = useInventorySave({
+    form,
+    editingId,
+    frontFile,
+    backFile,
+    companyId,
+    user,
+    cards,
+    showToast,
+    setSaving,
+    setForm,
+    setEditingId,
+    setFrontFile,
+    setBackFile,
+    setPriceManuallyEdited,
+    setTab,
+    addActivityLog,
+    addTransaction,
+    refreshAll,
+  });
+
   const signIn = async () => {
     setSaving(true);
     const { error } = await supabase.auth.signInWithPassword({ email: authEmail, password: authPassword });
@@ -533,24 +581,6 @@ export default function App() {
     }
   };
 
-  const updateCardStatus = async (card, nextStatus) => {
-    if (!canHold) return showToast("Only owner/admin can change hold status", "error");
-    setSaving(true);
-    const previousStatus = card.status || CARD_STATUS_AVAILABLE;
-    const { error } = await supabase.from("cards").update({ status: nextStatus, updated_by: user?.email }).eq("id", card.id);
-    if (error) { setSaving(false); showToast(error.message, "error"); return; }
-    await addActivityLog({ action: nextStatus === CARD_STATUS_HOLD ? "HOLD" : "RELEASE_HOLD", inventory_id: card.inventory_id, card_number: card.card_number, notes: `Status changed: ${previousStatus} → ${nextStatus}.` });
-    await refreshAll();
-    setSelectedCard((prev) => prev ? { ...prev, status: nextStatus } : prev);
-    setSaving(false);
-    showToast(nextStatus === CARD_STATUS_HOLD ? "Card placed on hold" : "Card released from hold");
-  };
-
-  const handleCostChange = (value) => {
-    const costNum = Number(value || 0);
-    setForm((prev) => ({ ...prev, cost: value, price: !editingId && !priceManuallyEdited ? (costNum ? (costNum * 1.3).toFixed(2) : "") : prev.price }));
-  };
-
   const getItemActivity = (card) => {
     const inventoryId = card?.inventory_id || "";
     const cardNumber = card?.card_number || "";
@@ -630,70 +660,6 @@ export default function App() {
     setSaving(false);
     showToast("Inventory count adjustments applied");
   };
-
-  const saveCard = async (e, options = {}) => {
-    if (e?.preventDefault) e.preventDefault();
-    if (!form.name.trim()) return showToast("Item Name is required", "error");
-    if (!companyId) return showToast("Company ID not found. Please log in again.", "error");
-    setSaving(true);
-    const formWithoutId = { ...form };
-    delete formWithoutId.id;
-    delete formWithoutId.slab_company;
-    delete formWithoutId.slab_grade;
-    const costNumber = Number(form.cost || 0);
-    const priceNumber = form.price === "" || form.price === null || form.price === undefined ? Number((costNumber * 1.3).toFixed(2)) : Number(form.price || 0);
-    const slabInfo = form.category === "Slab" && (form.slab_company || form.slab_grade) ? `Grading: ${form.slab_company || "N/A"} ${form.slab_grade || ""}. ${form.notes || ""}`.trim() : form.notes;
-    const payload = { ...formWithoutId, notes: slabInfo, category: options.forceCategory || formWithoutId.category, company_id: companyId, cost: costNumber, price: priceNumber, quantity: Number(form.quantity || 1) };
-    let cardId = editingId;
-    const wasEditing = Boolean(editingId);
-    if (editingId) {
-      payload.updated_by = user?.email;
-      const currentCard = cards.find((c) => c.id === editingId);
-      const inventoryId = currentCard?.inventory_id;
-      const changes = diffObjects(currentCard, payload, ["name", "category", "quantity", "card_number", "language", "cost", "price", "purchase_date", "payment_method", "seller_name", "seller_tel", "storage_location", "status", "notes"]);
-      const { error } = await supabase.from("cards").update(payload).eq("id", editingId);
-      if (error) { setSaving(false); showToast(error.message, "error"); return; }
-      await addActivityLog({ action: "EDIT", inventory_id: inventoryId, card_number: payload.card_number, notes: `Item updated. Changes: ${changes}` });
-    } else {
-      payload.created_by = user?.email;
-      const { data, error } = await supabase.from("cards").insert([payload]).select().single();
-      if (error) { setSaving(false); showToast(error.message, "error"); return; }
-      cardId = data.id;
-      const inventoryId = `${INVENTORY_ID_PREFIX}${String(data.id).padStart(INVENTORY_ID_PAD_LENGTH, "0")}`;
-      await supabase.from("cards").update({ inventory_id: inventoryId }).eq("id", data.id);
-      await addActivityLog({ action: "ADD", inventory_id: inventoryId, card_number: payload.card_number, notes: `Added card. Qty: ${payload.quantity}; Cost: ${money(payload.cost)}; Location: ${payload.storage_location || "N/A"}` });
-      await addTransaction({ inventory_id: inventoryId, card_number: payload.card_number, transaction_type: "ADD", quantity: payload.quantity, cost: payload.cost * payload.quantity, price: payload.price * payload.quantity, notes: "Card added to inventory" });
-    }
-    const frontUrl = await uploadFile(cardId, frontFile, "front", showToast);
-    const backUrl = await uploadFile(cardId, backFile, "back", showToast);
-    const updates = {};
-    if (frontUrl) updates.front_image = frontUrl;
-    if (backUrl) updates.back_image = backUrl;
-    if (Object.keys(updates).length > 0) {
-      const { error } = await supabase.from("cards").update(updates).eq("id", cardId);
-      if (error) { setSaving(false); showToast(error.message, "error"); return; }
-    }
-    setForm({ ...emptyForm, category: options.defaultCategory || DEFAULT_CATEGORY });
-    setEditingId(null);
-    setFrontFile(null);
-    setBackFile(null);
-    setPriceManuallyEdited(false);
-    await refreshAll();
-    setSaving(false);
-    if (options.keepAdding) { setTab(options.returnTab || "quickAddCard"); showToast("Item saved. Ready for next item."); }
-    else { setTab(DEFAULT_TAB); showToast(wasEditing ? "Item updated" : "Item saved"); }
-  };
-
-  const startEdit = (card) => {
-    setEditingId(card.id);
-    setPriceManuallyEdited(true);
-    setForm({ name: card.name || "", category: card.category || DEFAULT_CATEGORY, slab_company: "", slab_grade: "", quantity: card.quantity || 1, card_number: card.card_number || "", language: card.language || DEFAULT_LANGUAGE, cost: card.cost || "", price: card.price || "", purchase_date: card.purchase_date || "", payment_method: card.payment_method || "", seller_name: card.seller_name || "", seller_tel: card.seller_tel || "", storage_location: card.storage_location || "", status: card.status || CARD_STATUS_AVAILABLE, notes: card.notes || "" });
-    setSelectedCard(null);
-    setTab("stockIn");
-    window.scrollTo({ top: 0, behavior: "smooth" });
-  };
-
-  const cancelEdit = () => { setEditingId(null); setForm(emptyForm); setFrontFile(null); setBackFile(null); setPriceManuallyEdited(false); };
 
   const markAsSold = async (card) => {
     const availableQty = Number(card.quantity || 1);
@@ -826,23 +792,6 @@ export default function App() {
       setSaving(false);
       showToast(`Trade failed: ${err.message}`, "error");
     }
-  };
-
-  const deleteCard = async (id) => {
-    if (!canDelete) return showToast("Only owner/admin can delete cards", "error");
-    const card = cards.find((c) => c.id === id);
-    const result = await askModal({ title: "Delete item", message: `Delete ${card?.name || "this card"}? This cannot be undone from this screen.`, confirmText: "Delete", danger: true, fields: [{ name: "reason", label: "Reason", placeholder: "Duplicate / wrong entry / other" }] });
-    if (!result) return;
-    setSaving(true);
-    const { error } = await supabase.from("cards").delete().eq("id", id);
-    if (error) { setSaving(false); showToast(error.message, "error"); return; }
-    await addActivityLog({ action: "DELETE", inventory_id: card?.inventory_id, card_number: card?.card_number, notes: `Deleted card. Before: ${JSON.stringify({ name: card?.name, qty: card?.quantity, cost: card?.cost, price: card?.price, location: card?.storage_location })}. Reason: ${result.reason || "N/A"}` });
-    await addTransaction({ inventory_id: card?.inventory_id, card_number: card?.card_number, transaction_type: "DELETE", quantity: -Number(card?.quantity || 0), cost: Number(card?.cost || 0) * Number(card?.quantity || 0), price: Number(card?.price || 0) * Number(card?.quantity || 0), notes: result.reason || "Item deleted from inventory" });
-    await refreshAll();
-    setSaving(false);
-    setSelectedCard(null);
-    setTab(DEFAULT_TAB);
-    showToast("Item deleted");
   };
 
   const handleImportExcel = async (e) => {
