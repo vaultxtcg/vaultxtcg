@@ -1,12 +1,18 @@
 import { DashboardCards, SearchInput, StatusBadge, PaginationControls } from "./Common";
 import { money } from "../utils/helpers";
 
+function priceChartingUrl(card) {
+  const query = [card.name, card.card_number].filter(Boolean).join(" ");
+  return `https://www.pricecharting.com/search-products?q=${encodeURIComponent(query)}&type=prices`;
+}
+
 function ActionButtons({ card, styles, onView, onAddToCart, onQuickSell }) {
   return (
     <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
       <button type="button" style={styles.button} onClick={() => onView(card)}>View</button>
       {card.status !== "Sold" && <button type="button" style={styles.primary} onClick={() => onAddToCart(card)}>Add to Cart</button>}
       {card.status !== "Sold" && <button type="button" style={styles.button} onClick={() => onQuickSell(card)}>Quick Sell</button>}
+      <button type="button" style={styles.button} onClick={() => window.open(priceChartingUrl(card), "_blank", "noopener,noreferrer")}>PriceCharting</button>
     </div>
   );
 }

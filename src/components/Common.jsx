@@ -120,6 +120,26 @@ export function PaginationControls({ filteredLength, page, setPage, styles }) {
 }
 
 export function LogTable({ rows, headers, styles }) {
+  const headerLabels = {
+    created_at: "Date",
+    user_email: "Account",
+    action: "Action",
+    transaction_type: "Transaction",
+    inventory_id: "Inventory ID",
+    card_number: "Card #",
+    quantity: "Qty",
+    cost: "Cost",
+    price: "Price",
+    notes: "Notes",
+  };
+
+  const formatCell = (row, header) => {
+    if (header === "created_at") return fmtDate(row[header]);
+    if (header === "cost" || header === "price") return money(row[header]);
+    if (header === "user_email") return row[header] || "Unknown account";
+    return String(row[header] ?? "");
+  };
+
   const getActionRowStyle = (row) => {
     const action = String(row.action || row.transaction_type || "").toUpperCase();
     if (["ADD", "IMPORT", "TRADE_IN"].includes(action)) return { background: "rgba(22, 101, 52, 0.18)" };
@@ -132,10 +152,10 @@ export function LogTable({ rows, headers, styles }) {
   return (
     <div style={{ ...styles.card, overflowX: "auto", padding: 0 }}>
       <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 900 }}>
-        <thead><tr style={{ background: "#020617", color: "#94a3b8", textAlign: "left" }}>{headers.map((h) => <th key={h} style={{ padding: 12, borderBottom: "1px solid #1e293b" }}>{h}</th>)}</tr></thead>
+        <thead><tr style={{ background: "#020617", color: "#94a3b8", textAlign: "left" }}>{headers.map((h) => <th key={h} style={{ padding: 12, borderBottom: "1px solid #1e293b" }}>{headerLabels[h] || h}</th>)}</tr></thead>
         <tbody>
           {rows.length === 0 && <tr><td colSpan={headers.length} style={{ padding: 18, color: "#94a3b8" }}>No records found.</td></tr>}
-          {rows.map((row) => <tr key={row.id} style={{ borderBottom: "1px solid #1e293b", ...getActionRowStyle(row) }}>{headers.map((h) => <td key={h} style={{ padding: 12, verticalAlign: "top" }}>{h === "created_at" ? fmtDate(row[h]) : h === "cost" || h === "price" ? money(row[h]) : String(row[h] ?? "")}</td>)}</tr>)}
+          {rows.map((row) => <tr key={row.id} style={{ borderBottom: "1px solid #1e293b", ...getActionRowStyle(row) }}>{headers.map((h) => <td key={h} style={{ padding: 12, verticalAlign: "top" }}>{formatCell(row, h)}</td>)}</tr>)}
         </tbody>
       </table>
     </div>

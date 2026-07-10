@@ -15,6 +15,7 @@ export default function DashboardView({
   onViewCard,
 }) {
   const q = globalSearch.toLowerCase().trim();
+  const accountLabel = (email) => email || "Unknown account";
   const matchingCards = q ? cards.filter((card) => [card.name, card.inventory_id, card.card_number, card.storage_location, card.status].some((v) => String(v || "").toLowerCase().includes(q))).slice(0, 8) : [];
   const matchingSales = q ? sales.filter((sale) => [sale.sale_number, sale.customer_name, sale.customer_tel, sale.payment_method].some((v) => String(v || "").toLowerCase().includes(q))).slice(0, 8) : [];
   const matchingTrades = q ? tradeDeals.filter((deal) => [deal.trade_number, deal.customer_name, deal.customer_tel, deal.notes].some((v) => String(v || "").toLowerCase().includes(q))).slice(0, 8) : [];
@@ -65,7 +66,7 @@ export default function DashboardView({
         </div>
         <div style={styles.card}>
           <h3 style={{ marginTop: 0 }}>Recent Activity</h3>
-          {activityLogs.slice(0, 5).map((log) => <div key={log.id} style={{ padding: "8px 0", borderBottom: "1px solid #1e293b" }}>{log.action} · {log.inventory_id || "N/A"}</div>)}
+          {activityLogs.slice(0, 5).map((log) => <div key={log.id} style={{ padding: "8px 0", borderBottom: "1px solid #1e293b" }}>{log.action} · {log.inventory_id || "N/A"} · {accountLabel(log.user_email)}</div>)}
           {!activityLogs.length && <div style={styles.muted}>No activity yet.</div>}
         </div>
       </div>

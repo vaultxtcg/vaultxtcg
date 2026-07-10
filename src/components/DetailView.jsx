@@ -2,6 +2,13 @@ import { useState } from "react";
 import { DetailRow, StatusBadge, Barcode, MiniActivityList } from "./Common";
 import { money, fmtDate } from "../utils/helpers";
 
+const accountLabel = (email) => email || "Unknown account";
+
+function priceChartingUrl(card) {
+  const query = [card.name, card.card_number].filter(Boolean).join(" ");
+  return `https://www.pricecharting.com/search-products?q=${encodeURIComponent(query)}&type=prices`;
+}
+
 function DetailActions({
   card,
   styles,
@@ -33,6 +40,7 @@ function DetailActions({
           {card.status === "Sold" && canEditSale && <button type="button" style={styles.button} onClick={() => editSale(card)}>Edit Sale</button>}
           {card.status === "Sold" && canEditSale && <button type="button" style={styles.button} onClick={() => undoSale(card)}>Undo Sale</button>}
           <button type="button" style={styles.button} onClick={() => window.open(`https://www.tcgplayer.com/search/all/product?q=${encodeURIComponent(`${card.name} ${card.card_number}`)}`, "_blank")}>TCGplayer</button>
+          <button type="button" style={styles.button} onClick={() => window.open(priceChartingUrl(card), "_blank", "noopener,noreferrer")}>PriceCharting</button>
           <button type="button" style={styles.button} onClick={() => window.open(`https://www.ebay.com/sch/i.html?_nkw=${encodeURIComponent(`${card.name} ${card.card_number}`)}`, "_blank")}>eBay</button>
           {canDelete && <button type="button" style={styles.danger} onClick={() => deleteCard(card.id)}>Delete</button>}
         </div>
@@ -117,8 +125,8 @@ export default function DetailView({
       <div style={{ ...styles.card, marginTop: 16 }}>
         <h3 style={{ marginTop: 0 }}>Item Activity</h3>
         <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 16 }}>
-          <MiniActivityList title="Activity Logs" rows={logMatches} styles={styles} render={(log) => `${fmtDate(log.created_at)} · ${log.action} · ${log.notes || ""}`} />
-          <MiniActivityList title="Inventory Transactions" rows={transactionMatches} styles={styles} render={(tx) => `${fmtDate(tx.created_at)} · ${tx.transaction_type} · Qty ${tx.quantity} · ${money(tx.price)} · ${tx.notes || ""}`} />
+          <MiniActivityList title="Activity Logs" rows={logMatches} styles={styles} render={(log) => `${fmtDate(log.created_at)} · ${accountLabel(log.user_email)} · ${log.action} · ${log.notes || ""}`} />
+          <MiniActivityList title="Inventory Transactions" rows={transactionMatches} styles={styles} render={(tx) => `${fmtDate(tx.created_at)} · ${accountLabel(tx.user_email)} · ${tx.transaction_type} · Qty ${tx.quantity} · ${money(tx.price)} · ${tx.notes || ""}`} />
           <MiniActivityList title="Sales" rows={saleMatches} styles={styles} render={(item) => `${item.sale?.sale_number || "Sale"} · ${fmtDate(item.sale?.created_at)} · Qty ${item.quantity} · ${money(item.total_price)}`} />
           <MiniActivityList title="Trades" rows={tradeMatches} styles={styles} render={(item) => `${item.deal?.trade_number || "Trade"} · ${item.direction} · Qty ${item.quantity} · ${money(item.trade_value)}`} />
         </div>
