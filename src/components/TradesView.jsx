@@ -24,7 +24,7 @@ export default function TradesView({
   const tradeOutSearchResults = availableCards.filter((c) => {
     const keyword = inventorySearch.toLowerCase().trim();
     if (!keyword) return true;
-    return [c.inventory_id, c.name, c.card_number, c.storage_location, c.category]
+    return [c.inventory_id, c.name, c.card_number, c.storage_location, c.category, c.game]
       .some((value) => String(value || "").toLowerCase().includes(keyword));
   }).slice(0, 20);
 
@@ -44,6 +44,7 @@ export default function TradesView({
         { name: "tradeValue", label: "Total Trade-In Value", type: "number", defaultValue: 0 },
         { name: "listPrice", label: "List Price Per Card", type: "number", defaultValue: 0 },
         { name: "category", label: "Category", defaultValue: "Others" },
+        { name: "game", label: "Game", defaultValue: "Pokemon" },
         { name: "language", label: "Language", defaultValue: "English" },
         { name: "location", label: "Storage Location" },
         { name: "notes", label: "Notes" },

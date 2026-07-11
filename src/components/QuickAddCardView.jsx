@@ -1,4 +1,13 @@
-import { FormSection, GameLanguageSelect } from "./Common";
+import { FormSection, GameSelect, LanguageSelect } from "./Common";
+
+function Field({ label, children, styles }) {
+  return (
+    <label>
+      <div style={{ ...styles.muted, marginBottom: 6, fontWeight: 800 }}>{label}</div>
+      {children}
+    </label>
+  );
+}
 
 export default function QuickAddCardView({
   form,
@@ -14,11 +23,11 @@ export default function QuickAddCardView({
   setTab,
   saveCard,
 }) {
-  const quickCategory = ["Raw Card", "Slab"].includes(form.category) ? form.category : "Raw Card";
+  const quickCategory = ["Raw", "Slab"].includes(form.category) ? form.category : "Raw";
 
   const submitQuickAdd = (e, keepAdding = false) => {
     e.preventDefault();
-    const safeCategory = ["Raw Card", "Slab"].includes(form.category) ? form.category : "Raw Card";
+    const safeCategory = ["Raw", "Slab"].includes(form.category) ? form.category : "Raw";
     const quickForm = {
       ...form,
       category: safeCategory,
@@ -40,63 +49,96 @@ export default function QuickAddCardView({
           Use this when buying raw cards or slabs from customers at the counter. Keep it fast, then use View Detail later for full edits.
         </div>
 
-        <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 10 }}>
-          <select
-            value={quickCategory}
-            onChange={(e) => setForm({
-              ...form,
-              category: e.target.value,
-              slab_company: e.target.value === "Slab" ? form.slab_company : "",
-              slab_grade: e.target.value === "Slab" ? form.slab_grade : "",
-            })}
-            style={styles.input}
-          >
-            <option value="Raw Card">Raw Card</option>
-            <option value="Slab">Slab</option>
-          </select>
-          <GameLanguageSelect value={form.language} onChange={(e) => setForm({ ...form, language: e.target.value })} styles={styles} />
+        <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr 1fr", gap: 10 }}>
+          <Field label="Category" styles={styles}>
+            <select
+              value={quickCategory}
+              onChange={(e) => setForm({
+                ...form,
+                category: e.target.value,
+                slab_company: e.target.value === "Slab" ? form.slab_company : "",
+                slab_grade: e.target.value === "Slab" ? form.slab_grade : "",
+              })}
+              style={styles.input}
+            >
+              <option value="Raw">Raw</option>
+              <option value="Slab">Slab</option>
+            </select>
+          </Field>
+          <Field label="Game" styles={styles}>
+            <GameSelect value={form.game} onChange={(e) => setForm({ ...form, game: e.target.value })} styles={styles} />
+          </Field>
+          <Field label="Language" styles={styles}>
+            <LanguageSelect value={form.language} onChange={(e) => setForm({ ...form, language: e.target.value })} styles={styles} />
+          </Field>
         </div>
 
-        <input placeholder={quickCategory === "Slab" ? "Slab Card Name" : "Card Name"} value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value, category: quickCategory })} style={styles.input} />
-        <input placeholder="SKU / Card # e.g. OP13-108" value={form.card_number} onChange={(e) => setForm({ ...form, card_number: e.target.value })} style={styles.input} />
+        <Field label="Item Name" styles={styles}>
+          <input placeholder={quickCategory === "Slab" ? "Slab Card Name" : "Card Name"} value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value, category: quickCategory })} style={styles.input} />
+        </Field>
+        <Field label="SKU / Card #" styles={styles}>
+          <input placeholder="OP13-108" value={form.card_number} onChange={(e) => setForm({ ...form, card_number: e.target.value })} style={styles.input} />
+        </Field>
 
         {quickCategory === "Slab" && (
           <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 10 }}>
-            <select value={form.slab_company || "PSA"} onChange={(e) => setForm({ ...form, slab_company: e.target.value, category: "Slab" })} style={styles.input}>
-              <option value="PSA">PSA</option>
-              <option value="BGS">BGS</option>
-              <option value="CGC">CGC</option>
-              <option value="SGC">SGC</option>
-              <option value="TAG">TAG</option>
-              <option value="Other">Other</option>
-            </select>
-            <input placeholder="Grade e.g. 10 / 9.5 / 9" value={form.slab_grade || ""} onChange={(e) => setForm({ ...form, slab_grade: e.target.value, category: "Slab" })} style={styles.input} />
+            <Field label="Grading Company" styles={styles}>
+              <select value={form.slab_company || "PSA"} onChange={(e) => setForm({ ...form, slab_company: e.target.value, category: "Slab" })} style={styles.input}>
+                <option value="PSA">PSA</option>
+                <option value="BGS">BGS</option>
+                <option value="CGC">CGC</option>
+                <option value="SGC">SGC</option>
+                <option value="TAG">TAG</option>
+                <option value="Other">Other</option>
+              </select>
+            </Field>
+            <Field label="Grade" styles={styles}>
+              <input placeholder="10 / 9.5 / 9" value={form.slab_grade || ""} onChange={(e) => setForm({ ...form, slab_grade: e.target.value, category: "Slab" })} style={styles.input} />
+            </Field>
           </div>
         )}
 
         <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 10 }}>
-          <input type="number" min="1" placeholder="Quantity" value={form.quantity} onChange={(e) => setForm({ ...form, quantity: e.target.value })} style={styles.input} />
-          <input placeholder="Storage Location" value={form.storage_location} onChange={(e) => setForm({ ...form, storage_location: e.target.value })} style={styles.input} />
+          <Field label="Quantity" styles={styles}>
+            <input type="number" min="1" placeholder="1" value={form.quantity} onChange={(e) => setForm({ ...form, quantity: e.target.value })} style={styles.input} />
+          </Field>
+          <Field label="Storage Location" styles={styles}>
+            <input placeholder="Showcase A / Binder 3" value={form.storage_location} onChange={(e) => setForm({ ...form, storage_location: e.target.value })} style={styles.input} />
+          </Field>
         </div>
 
         <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 10 }}>
-          <input placeholder="Cost / Trade-in value" value={form.cost} onChange={(e) => handleCostChange(e.target.value)} style={styles.input} />
-          <input placeholder="List Price (auto 130% of cost)" value={form.price} onChange={(e) => { setPriceManuallyEdited(true); setForm({ ...form, price: e.target.value }); }} style={styles.input} />
+          <Field label="Cost / Trade-In Value" styles={styles}>
+            <input placeholder="0.00" value={form.cost} onChange={(e) => handleCostChange(e.target.value)} style={styles.input} />
+          </Field>
+          <Field label="List Price" styles={styles}>
+            <input placeholder="Auto 130% of cost" value={form.price} onChange={(e) => { setPriceManuallyEdited(true); setForm({ ...form, price: e.target.value }); }} style={styles.input} />
+          </Field>
         </div>
 
         <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 10 }}>
-          <input placeholder="Seller Name" value={form.seller_name} onChange={(e) => setForm({ ...form, seller_name: e.target.value })} style={styles.input} />
-          <input placeholder="Seller Tel" value={form.seller_tel} onChange={(e) => setForm({ ...form, seller_tel: e.target.value })} style={styles.input} />
+          <Field label="Seller Name" styles={styles}>
+            <input placeholder="Customer / Vendor" value={form.seller_name} onChange={(e) => setForm({ ...form, seller_name: e.target.value })} style={styles.input} />
+          </Field>
+          <Field label="Seller Phone" styles={styles}>
+            <input placeholder="Phone number" value={form.seller_tel} onChange={(e) => setForm({ ...form, seller_tel: e.target.value })} style={styles.input} />
+          </Field>
         </div>
 
-        <textarea placeholder={quickCategory === "Slab" ? "Notes (grading info is saved automatically)" : "Notes"} value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} style={{ ...styles.input, minHeight: 80, resize: "vertical" }} />
+        <Field label="Notes" styles={styles}>
+          <textarea placeholder={quickCategory === "Slab" ? "Grading info is saved automatically" : "Condition, source, or counter notes"} value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} style={{ ...styles.input, minHeight: 80, resize: "vertical" }} />
+        </Field>
 
-        <div style={{ ...styles.card, marginTop: 10, background: "#020617" }}>
+        <div style={{ ...styles.card, marginTop: 10, background: "#0b1220" }}>
           <h4 style={{ marginTop: 0 }}>Photos</h4>
-          <div style={{ ...styles.muted, marginBottom: 10 }}>Please make sure the picture is clear and in foucus </div>
+          <div style={{ ...styles.muted, marginBottom: 10 }}>Use clear front and back photos for faster identification.</div>
           <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 10 }}>
-            <label>Front Image<br /><input type="file" accept="image/*" onChange={(e) => setFrontFile(e.target.files[0])} /></label>
-            <label>Back Image<br /><input type="file" accept="image/*" onChange={(e) => setBackFile(e.target.files[0])} /></label>
+            <Field label="Front Image" styles={styles}>
+              <input type="file" accept="image/*" onChange={(e) => setFrontFile(e.target.files[0])} />
+            </Field>
+            <Field label="Back Image" styles={styles}>
+              <input type="file" accept="image/*" onChange={(e) => setBackFile(e.target.files[0])} />
+            </Field>
           </div>
         </div>
       </FormSection>

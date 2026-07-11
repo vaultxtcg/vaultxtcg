@@ -6,14 +6,14 @@ function NavButton({ item, tab, onNavigate, cancelEdit, setForm, emptyForm }) {
       type="button"
       onClick={() => {
         if (item.key === "stockIn" || item.key === "quickAddCard") cancelEdit();
-        if (item.key === "quickAddCard") setForm({ ...emptyForm, category: "Raw Card" });
-        if (item.key === "stockIn") setForm({ ...emptyForm, category: "Sealed Product" });
+        if (item.key === "quickAddCard") setForm({ ...emptyForm, category: "Raw" });
+        if (item.key === "stockIn") setForm({ ...emptyForm, category: "Sealed" });
         onNavigate(item.key);
       }}
       style={{
-        width: "100%", textAlign: "left", marginBottom: 8, padding: "11px 12px", borderRadius: 12,
-        border: tab === item.key ? "1px solid #3b82f6" : "1px solid transparent",
-        background: tab === item.key ? "#1d4ed8" : "transparent", color: "#e5e7eb", cursor: "pointer", fontWeight: 700,
+        width: "100%", textAlign: "left", marginBottom: 6, padding: "10px 11px", borderRadius: 8,
+        border: tab === item.key ? "1px solid #2563eb" : "1px solid transparent",
+        background: tab === item.key ? "#172554" : "transparent", color: "#e5e7eb", cursor: "pointer", fontWeight: 700,
       }}
     >
       <span style={{ marginRight: 8 }}>{item.icon}</span>{item.label}
@@ -43,8 +43,8 @@ export default function Sidebar({
 
   const handleNav = (item) => {
     if (item.key === "stockIn" || item.key === "quickAddCard") cancelEdit();
-    if (item.key === "quickAddCard") setForm({ ...emptyForm, category: "Raw Card" });
-    if (item.key === "stockIn") setForm({ ...emptyForm, category: "Sealed Product" });
+    if (item.key === "quickAddCard") setForm({ ...emptyForm, category: "Raw" });
+    if (item.key === "stockIn") setForm({ ...emptyForm, category: "Sealed" });
     setSelectedCard(null);
     setTab(item.key);
     if (isMobile && !mobilePrimaryNavKeys.includes(item.key)) setShowMoreMenu(false);
@@ -52,8 +52,11 @@ export default function Sidebar({
 
   return (
     <aside style={styles.sidebar}>
-      <div style={{ fontSize: 22, fontWeight: 900, marginBottom: 6 }}>Vault X TCG</div>
-      <div style={{ ...styles.muted, marginBottom: 18 }}>{userRole || "user"} · {user?.email}</div>
+      <div style={{ fontSize: 22, fontWeight: 900, marginBottom: 4 }}>Vault X TCG</div>
+      <div style={{ ...styles.card, padding: 10, marginBottom: 14, background: "#0b1220" }}>
+        <div style={{ ...styles.muted, textTransform: "uppercase", letterSpacing: 0, fontSize: 11, fontWeight: 800 }}>{userRole || "user"}</div>
+        <div style={{ fontSize: 13, marginTop: 3, wordBreak: "break-word" }}>{user?.email}</div>
+      </div>
       {isMobile ? (
         <>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 8 }}>
@@ -63,9 +66,9 @@ export default function Sidebar({
                 type="button"
                 onClick={() => handleNav(item)}
                 style={{
-                  width: "100%", textAlign: "left", marginBottom: 0, padding: "11px 12px", borderRadius: 12,
-                  border: tab === item.key ? "1px solid #3b82f6" : "1px solid transparent",
-                  background: tab === item.key ? "#1d4ed8" : "transparent", color: "#e5e7eb", cursor: "pointer", fontWeight: 700,
+                  width: "100%", textAlign: "left", marginBottom: 0, padding: "10px 11px", borderRadius: 8,
+                  border: tab === item.key ? "1px solid #2563eb" : "1px solid transparent",
+                  background: tab === item.key ? "#172554" : "transparent", color: "#e5e7eb", cursor: "pointer", fontWeight: 700,
                 }}
               >
                 <span style={{ marginRight: 8 }}>{item.icon}</span>{item.label}
@@ -80,10 +83,10 @@ export default function Sidebar({
               width: "100%",
               textAlign: "left",
               marginBottom: 8,
-              padding: "11px 12px",
-              borderRadius: 12,
+              padding: "10px 11px",
+              borderRadius: 8,
               border: isMoreTabActive || showMoreMenu ? "1px solid #3b82f6" : "1px solid #334155",
-              background: isMoreTabActive || showMoreMenu ? "#1d4ed8" : "#1e293b",
+              background: isMoreTabActive || showMoreMenu ? "#172554" : "#182235",
               color: "#e5e7eb",
               cursor: "pointer",
               fontWeight: 700,
@@ -100,9 +103,9 @@ export default function Sidebar({
                   type="button"
                   onClick={() => handleNav(item)}
                   style={{
-                    width: "100%", textAlign: "left", marginBottom: 0, padding: "11px 12px", borderRadius: 12,
-                    border: tab === item.key ? "1px solid #3b82f6" : "1px solid transparent",
-                    background: tab === item.key ? "#1d4ed8" : "transparent", color: "#e5e7eb", cursor: "pointer", fontWeight: 700,
+                    width: "100%", textAlign: "left", marginBottom: 0, padding: "10px 11px", borderRadius: 8,
+                    border: tab === item.key ? "1px solid #2563eb" : "1px solid transparent",
+                    background: tab === item.key ? "#172554" : "transparent", color: "#e5e7eb", cursor: "pointer", fontWeight: 700,
                   }}
                 >
                   <span style={{ marginRight: 8 }}>{item.icon}</span>{item.label}

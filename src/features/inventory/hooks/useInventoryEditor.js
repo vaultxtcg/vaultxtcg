@@ -1,6 +1,6 @@
 import { CARD_STATUS_AVAILABLE } from "../../../config/constants";
 import { DEFAULT_CATEGORY } from "../../../config/categories";
-import { DEFAULT_LANGUAGE } from "../../../config/languages";
+import { DEFAULT_GAME, DEFAULT_LANGUAGE } from "../../../config/languages";
 import { emptyForm } from "../../../utils/helpers";
 
 export function useInventoryEditor({
@@ -22,7 +22,7 @@ export function useInventoryEditor({
   const startEdit = (card) => {
     setEditingId(card.id);
     setPriceManuallyEdited(true);
-    setForm({ name: card.name || "", category: card.category || DEFAULT_CATEGORY, slab_company: "", slab_grade: "", quantity: card.quantity || 1, card_number: card.card_number || "", language: card.language || DEFAULT_LANGUAGE, cost: card.cost || "", price: card.price || "", purchase_date: card.purchase_date || "", payment_method: card.payment_method || "", seller_name: card.seller_name || "", seller_tel: card.seller_tel || "", storage_location: card.storage_location || "", status: card.status || CARD_STATUS_AVAILABLE, notes: card.notes || "" });
+    setForm({ name: card.name || "", category: card.category || DEFAULT_CATEGORY, slab_company: "", slab_grade: "", quantity: card.quantity || 1, card_number: card.card_number || "", game: card.game || DEFAULT_GAME, language: card.language || DEFAULT_LANGUAGE, cost: card.cost || "", price: card.price || "", purchase_date: card.purchase_date || "", payment_method: card.payment_method || "", seller_name: card.seller_name || "", seller_tel: card.seller_tel || "", storage_location: card.storage_location || "", status: card.status || CARD_STATUS_AVAILABLE, notes: card.notes || "" });
     setSelectedCard(null);
     setTab("stockIn");
     window.scrollTo({ top: 0, behavior: "smooth" });

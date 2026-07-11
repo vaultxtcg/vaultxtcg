@@ -7,7 +7,7 @@ import {
   INVENTORY_ID_PREFIX,
   TRADE_NUMBER_PREFIX,
 } from "../../../config/constants";
-import { DEFAULT_LANGUAGE } from "../../../config/languages";
+import { DEFAULT_GAME, DEFAULT_LANGUAGE } from "../../../config/languages";
 import { DEFAULT_TRADE_CUSTOMER, TRADE_PAYMENT_METHOD } from "../../../config/paymentMethods";
 import { money } from "../../../utils/helpers";
 import { addActivityLog } from "../../../services/activityService";
@@ -48,7 +48,7 @@ export async function executeTradeDeal({
       const quantity = Number(item.quantity || 1);
       const tradeValue = Number(item.tradeValue || 0);
       const listPrice = Number(item.listPrice || tradeValue || 0);
-      const cardPayload = { company_id: companyId, name: item.name, category: item.category || "Others", quantity, card_number: item.cardNumber || "", language: item.language || DEFAULT_LANGUAGE, cost: quantity ? tradeValue / quantity : tradeValue, price: listPrice, purchase_date: new Date().toISOString().slice(0, 10), payment_method: TRADE_PAYMENT_METHOD, seller_name: customerName || DEFAULT_TRADE_CUSTOMER, seller_tel: customerTel || "", storage_location: item.location || "", status: CARD_STATUS_AVAILABLE, notes: `${tradeNumber} trade in. ${item.notes || ""}`, created_by: userEmail };
+      const cardPayload = { company_id: companyId, name: item.name, category: item.category || "Others", quantity, card_number: item.cardNumber || "", game: item.game || DEFAULT_GAME, language: item.language || DEFAULT_LANGUAGE, cost: quantity ? tradeValue / quantity : tradeValue, price: listPrice, purchase_date: new Date().toISOString().slice(0, 10), payment_method: TRADE_PAYMENT_METHOD, seller_name: customerName || DEFAULT_TRADE_CUSTOMER, seller_tel: customerTel || "", storage_location: item.location || "", status: CARD_STATUS_AVAILABLE, notes: `${tradeNumber} trade in. ${item.notes || ""}`, created_by: userEmail };
       const { data: newCard, error: cardError } = await supabase.from("cards").insert([cardPayload]).select().single();
       if (cardError) throw cardError;
       const inventoryId = `${INVENTORY_ID_PREFIX}${String(newCard.id).padStart(INVENTORY_ID_PAD_LENGTH, "0")}`;

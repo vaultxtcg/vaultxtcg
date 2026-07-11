@@ -1,5 +1,5 @@
 import { memo } from "react";
-import { fmtDate, money, ITEM_CATEGORIES, GAME_OR_LANGUAGE_OPTIONS, PAGE_SIZE } from "../utils/helpers";
+import { fmtDate, money, ITEM_CATEGORIES, GAME_OPTIONS, LANGUAGE_OPTIONS, PAGE_SIZE } from "../utils/helpers";
 
 export function Toast({ toast }) {
   return (
@@ -151,11 +151,11 @@ export function LogTable({ rows, headers, styles }) {
   };
   return (
     <div style={{ ...styles.card, overflowX: "auto", padding: 0 }}>
-      <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 900 }}>
-        <thead><tr style={{ background: "#020617", color: "#94a3b8", textAlign: "left" }}>{headers.map((h) => <th key={h} style={{ padding: 12, borderBottom: "1px solid #1e293b" }}>{headerLabels[h] || h}</th>)}</tr></thead>
+      <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 900, fontSize: 14 }}>
+        <thead><tr style={{ background: "#0b1220", color: "#9ca3af", textAlign: "left" }}>{headers.map((h) => <th key={h} style={{ padding: "10px 12px", borderBottom: "1px solid #243044", fontSize: 12, textTransform: "uppercase" }}>{headerLabels[h] || h}</th>)}</tr></thead>
         <tbody>
-          {rows.length === 0 && <tr><td colSpan={headers.length} style={{ padding: 18, color: "#94a3b8" }}>No records found.</td></tr>}
-          {rows.map((row) => <tr key={row.id} style={{ borderBottom: "1px solid #1e293b", ...getActionRowStyle(row) }}>{headers.map((h) => <td key={h} style={{ padding: 12, verticalAlign: "top" }}>{formatCell(row, h)}</td>)}</tr>)}
+          {rows.length === 0 && <tr><td colSpan={headers.length} style={{ padding: 18, color: "#9ca3af" }}>No records found.</td></tr>}
+          {rows.map((row) => <tr key={row.id} style={{ borderBottom: "1px solid #243044", ...getActionRowStyle(row) }}>{headers.map((h) => <td key={h} style={{ padding: "10px 12px", verticalAlign: "top" }}>{formatCell(row, h)}</td>)}</tr>)}
         </tbody>
       </table>
     </div>
@@ -174,9 +174,9 @@ export function DashboardCards({ stats, isMobile, styles }) {
   return (
     <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr 1fr" : "repeat(6, 1fr)", gap: 12, marginBottom: 16 }}>
       {items.map((item) => (
-        <div key={item.label} style={styles.card}>
-          <div style={styles.muted}>{item.label}</div>
-          <div style={{ fontSize: isMobile ? 18 : 24, fontWeight: 900, marginTop: 6 }}>{item.value}</div>
+        <div key={item.label} style={{ ...styles.card, padding: 12 }}>
+          <div style={{ ...styles.muted, textTransform: "uppercase", letterSpacing: 0, fontSize: 11, fontWeight: 800 }}>{item.label}</div>
+          <div style={{ fontSize: isMobile ? 18 : 22, fontWeight: 850, marginTop: 6, lineHeight: 1.15 }}>{item.value}</div>
         </div>
       ))}
     </div>
@@ -211,10 +211,20 @@ export function CategorySelect({ value, onChange, styles }) {
   );
 }
 
-export function GameLanguageSelect({ value, onChange, styles }) {
+export function GameSelect({ value, onChange, styles }) {
   return (
     <select value={value} onChange={onChange} style={styles.input}>
-      {GAME_OR_LANGUAGE_OPTIONS.map((option) => (
+      {GAME_OPTIONS.map((option) => (
+        <option key={option} value={option}>{option}</option>
+      ))}
+    </select>
+  );
+}
+
+export function LanguageSelect({ value, onChange, styles }) {
+  return (
+    <select value={value} onChange={onChange} style={styles.input}>
+      {LANGUAGE_OPTIONS.map((option) => (
         <option key={option} value={option}>{option}</option>
       ))}
     </select>

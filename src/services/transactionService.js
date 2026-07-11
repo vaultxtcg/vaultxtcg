@@ -1,5 +1,9 @@
 import { supabase } from "../lib/supabase";
 
+function isMissingTransactionsTable(error) {
+  return error?.code === "PGRST205" || String(error?.message || "").includes("inventory_transactions");
+}
+
 export async function addTransaction(companyId, userEmail, { inventory_id, card_number, transaction_type, quantity, cost, price, notes }) {
   const { error } = await supabase.from("inventory_transactions").insert([
     {
@@ -14,5 +18,5 @@ export async function addTransaction(companyId, userEmail, { inventory_id, card_
       user_email: userEmail,
     },
   ]);
-  if (error) console.error("Transaction Error:", error);
+  if (error && !isMissingTransactionsTable(error)) console.error("Transaction Error:", error);
 }

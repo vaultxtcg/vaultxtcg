@@ -49,6 +49,10 @@ export default function App() {
   const [tab, setTab] = useState(DEFAULT_TAB);
   const [selectedCard, setSelectedCard] = useState(null);
   const [search, setSearch] = useState("");
+  const [categoryFilter, setCategoryFilter] = useState("ALL");
+  const [gameFilter, setGameFilter] = useState("ALL");
+  const [statusFilter, setStatusFilter] = useState("ALL");
+  const [locationFilter, setLocationFilter] = useState("ALL");
   const [page, setPage] = useState(1);
   const [globalSearch, setGlobalSearch] = useState("");
   const [activityFilter, setActivityFilter] = useState(ACTIVITY_FILTER_ALL);
@@ -113,7 +117,7 @@ export default function App() {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- reset pagination when filters change
     setPage(1);
     setBulkSelected([]);
-  }, [search, tab]);
+  }, [search, categoryFilter, gameFilter, statusFilter, locationFilter, tab]);
 
   const showToast = useCallback((message, type = "success") => {
     setToast({ message, type });
@@ -214,7 +218,9 @@ export default function App() {
       .eq("company_id", targetCompanyId)
       .order("created_at", { ascending: false });
     if (error) {
-      console.error("Transactions Load Error:", error);
+      if (error.code !== "PGRST205") console.error("Transactions Load Error:", error);
+      setTransactions([]);
+      dataLoadedRef.current.transactions = true;
       return;
     }
     setTransactions(data || []);
@@ -636,11 +642,15 @@ export default function App() {
   const filtered = useMemo(() => {
     const keyword = search.toLowerCase().trim();
     return cards.filter((c) => {
-      const matchSearch = !keyword || [c.name, c.category, c.card_number, c.inventory_id, c.storage_location, c.status, c.language].some((value) => String(value || "").toLowerCase().includes(keyword));
-      if (tab === DEFAULT_TAB) return matchSearch && c.status !== CARD_STATUS_SOLD;
-      return matchSearch;
+      const matchSearch = !keyword || [c.name, c.category, c.game, c.card_number, c.inventory_id, c.storage_location, c.status, c.language].some((value) => String(value || "").toLowerCase().includes(keyword));
+      const matchCategory = categoryFilter === "ALL" || c.category === categoryFilter;
+      const matchGame = gameFilter === "ALL" || c.game === gameFilter;
+      const matchStatus = statusFilter === "ALL" || c.status === statusFilter;
+      const matchLocation = locationFilter === "ALL" || (c.storage_location || "No Location") === locationFilter;
+      if (tab === DEFAULT_TAB) return matchSearch && matchCategory && matchGame && matchStatus && matchLocation && c.status !== CARD_STATUS_SOLD;
+      return matchSearch && matchCategory && matchGame && matchStatus && matchLocation;
     });
-  }, [cards, search, tab]);
+  }, [cards, categoryFilter, gameFilter, locationFilter, search, statusFilter, tab]);
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const safePage = Math.min(page, totalPages);
@@ -665,6 +675,7 @@ export default function App() {
   }, []);
 
   const handleSearchChange = useCallback((e) => setSearch(e.target.value), []);
+  const locationOptions = useMemo(() => Array.from(new Set(cards.map((c) => c.storage_location || "No Location"))).sort(), [cards]);
 
   if (!user) {
     return (
@@ -725,7 +736,7 @@ export default function App() {
                 <DashboardView stats={stats} isMobile={isMobile} styles={styles} cards={cards} sales={sales} tradeDeals={tradeDeals} customers={customers} activityLogs={activityLogs} globalSearch={globalSearch} setGlobalSearch={setGlobalSearch} onViewCard={handleViewCard} />
               )}
               {tab === "inventory" && (
-                <InventoryView stats={stats} isMobile={isMobile} styles={styles} search={search} onSearchChange={handleSearchChange} canAdjust={canAdjust} bulkSelected={bulkSelected} setBulkSelected={setBulkSelected} pagedCards={pagedCards} filteredLength={filtered.length} page={safePage} setPage={setPage} onView={handleViewCard} onAddToCart={addToCart} onQuickSell={markAsSold} bulkMoveLocation={bulkMoveLocation} bulkUpdatePrice={bulkUpdatePrice} bulkUpdateStatus={bulkUpdateStatus} />
+                <InventoryView stats={stats} isMobile={isMobile} styles={styles} search={search} onSearchChange={handleSearchChange} categoryFilter={categoryFilter} setCategoryFilter={setCategoryFilter} gameFilter={gameFilter} setGameFilter={setGameFilter} statusFilter={statusFilter} setStatusFilter={setStatusFilter} locationFilter={locationFilter} setLocationFilter={setLocationFilter} locationOptions={locationOptions} canAdjust={canAdjust} bulkSelected={bulkSelected} setBulkSelected={setBulkSelected} pagedCards={pagedCards} filteredLength={filtered.length} page={safePage} setPage={setPage} onView={handleViewCard} onAddToCart={addToCart} onQuickSell={markAsSold} bulkMoveLocation={bulkMoveLocation} bulkUpdatePrice={bulkUpdatePrice} bulkUpdateStatus={bulkUpdateStatus} />
               )}
               {tab === "quickAddCard" && (
                 <QuickAddCardView form={form} setForm={setForm} isMobile={isMobile} styles={styles} saving={saving} handleCostChange={handleCostChange} setPriceManuallyEdited={setPriceManuallyEdited} setFrontFile={setFrontFile} setBackFile={setBackFile} cancelEdit={cancelEdit} setTab={setTab} saveCard={saveCard} />

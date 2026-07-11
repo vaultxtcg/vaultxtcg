@@ -5,7 +5,7 @@ import {
   INVENTORY_ID_PAD_LENGTH,
   INVENTORY_ID_PREFIX,
 } from "../config/constants";
-import { DEFAULT_LANGUAGE } from "../config/languages";
+import { DEFAULT_GAME, DEFAULT_LANGUAGE } from "../config/languages";
 import { DEFAULT_PAYMENT_METHOD } from "../config/paymentMethods";
 
 export function downloadCSV(filename, headers, rows) {
@@ -26,7 +26,7 @@ export function exportInventoryCSV(cards) {
   downloadCSV(
     "vaultxtcg_inventory.csv",
     [
-      "inventory_id", "name", "category", "card_number", "language", "quantity", "cost", "price", "status",
+      "inventory_id", "name", "category", "game", "card_number", "language", "quantity", "cost", "price", "status",
       "purchase_date", "payment_method", "seller_name", "storage_location", "created_by", "updated_by",
     ],
     cards.filter((c) => c.status !== CARD_STATUS_SOLD)
@@ -37,7 +37,7 @@ export function exportSalesCSV(cards) {
   downloadCSV(
     "vaultxtcg_sales.csv",
     [
-      "inventory_id", "name", "category", "card_number", "quantity", "cost", "sold_price", "sold_date", "receiving_method", "sold_by",
+      "inventory_id", "name", "category", "game", "card_number", "quantity", "cost", "sold_price", "sold_date", "receiving_method", "sold_by",
     ],
     cards.filter((c) => c.status === CARD_STATUS_SOLD)
   );
@@ -62,7 +62,8 @@ export function exportTransactionsCSV(transactions) {
 export function downloadExcelTemplate() {
   const template = [{
     name: "Monkey D. Luffy",
-    category: "One Piece",
+    category: "Raw",
+    game: "One Piece",
     quantity: 1,
     card_number: "OP13-108",
     language: DEFAULT_LANGUAGE,
@@ -108,7 +109,8 @@ export async function importExcelFile(file, { companyId, userEmail, supabase, sh
           .map((row) => ({
             company_id: companyId,
             name: row.name || row.Name || "",
-            category: row.category || row.Category || "Pokemon",
+            category: row.category || row.Category || "Raw",
+            game: row.game || row.Game || DEFAULT_GAME,
             card_number: row.card_number || row["SKU / Card #"] || row.cardNumber || row["SKU / Card # / ID"] || "",
             language: row.language || row.Language || DEFAULT_LANGUAGE,
             quantity: Number(row.quantity || row.Quantity || row.qty || row.Qty || 1),

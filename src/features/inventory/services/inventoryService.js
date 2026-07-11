@@ -46,7 +46,7 @@ export async function saveCard({
     payload.updated_by = userEmail;
     const currentCard = cards.find((c) => c.id === editingId);
     const inventoryId = currentCard?.inventory_id;
-    const changes = diffObjects(currentCard, payload, ["name", "category", "quantity", "card_number", "language", "cost", "price", "purchase_date", "payment_method", "seller_name", "seller_tel", "storage_location", "status", "notes"]);
+    const changes = diffObjects(currentCard, payload, ["name", "category", "game", "language", "quantity", "card_number", "cost", "price", "purchase_date", "payment_method", "seller_name", "seller_tel", "storage_location", "status", "notes"]);
     const { error } = await supabase.from("cards").update(payload).eq("id", editingId);
     if (error) return { success: false, error: error.message };
     await addActivityLog({ action: "EDIT", inventory_id: inventoryId, card_number: payload.card_number, notes: `Item updated. Changes: ${changes}` });

@@ -1,15 +1,15 @@
 /** Inventory item category configuration. */
 
 export const ITEM_CATEGORIES = [
-  "Raw Card",
+  "Raw",
   "Slab",
-  "Sealed Product",
+  "Sealed",
   "Merchandise",
-  "Beverage",
   "Accessory",
-  "Other",
+  "Food & Beverage",
+  "Others",
 ];
 
-export const DEFAULT_CATEGORY = "Raw Card";
+export const DEFAULT_CATEGORY = "Raw";
 
-export const DEFAULT_STOCK_IN_CATEGORY = "Sealed Product";
+export const DEFAULT_STOCK_IN_CATEGORY = "Sealed";

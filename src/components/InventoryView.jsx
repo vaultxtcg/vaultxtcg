@@ -1,5 +1,6 @@
 import { DashboardCards, SearchInput, StatusBadge, PaginationControls } from "./Common";
-import { money } from "../utils/helpers";
+import { GAME_OPTIONS, ITEM_CATEGORIES, money } from "../utils/helpers";
+import { CARD_STATUS_AVAILABLE, CARD_STATUS_SOLD } from "../config/constants";
 
 function priceChartingUrl(card) {
   const query = [card.name, card.card_number].filter(Boolean).join(" ");
@@ -8,7 +9,7 @@ function priceChartingUrl(card) {
 
 function ActionButtons({ card, styles, onView, onAddToCart, onQuickSell }) {
   return (
-    <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+    <div style={{ display: "flex", gap: 6, flexWrap: "wrap", minWidth: 260 }}>
       <button type="button" style={styles.button} onClick={() => onView(card)}>View</button>
       {card.status !== "Sold" && <button type="button" style={styles.primary} onClick={() => onAddToCart(card)}>Add to Cart</button>}
       {card.status !== "Sold" && <button type="button" style={styles.button} onClick={() => onQuickSell(card)}>Quick Sell</button>}
@@ -21,24 +22,26 @@ function DesktopInventoryTable({ pagedCards, filteredLength, canAdjust, bulkSele
   return (
     <>
       <div style={{ ...styles.card, overflowX: "auto", padding: 0 }}>
-        <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 980 }}>
+        <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 1080, fontSize: 14 }}>
           <thead>
-            <tr style={{ background: "#020617", color: "#94a3b8", textAlign: "left" }}>
-              {(canAdjust ? ["Select", "Image", "Inventory ID", "Name", "Card #", "Qty", "Cost", "Price", "Location", "Status", "Actions"] : ["Image", "Inventory ID", "Name", "Card #", "Qty", "Cost", "Price", "Location", "Status", "Actions"]).map((h) => <th key={h} style={{ padding: 12, borderBottom: "1px solid #1e293b" }}>{h}</th>)}
+            <tr style={{ background: "#0b1220", color: "#9ca3af", textAlign: "left" }}>
+              {(canAdjust ? ["Select", "Image", "Inventory ID", "Item", "Qty", "Cost", "Price", "Location", "Status", "Actions"] : ["Image", "Inventory ID", "Item", "Qty", "Cost", "Price", "Location", "Status", "Actions"]).map((h) => <th key={h} style={{ padding: "10px 12px", borderBottom: "1px solid #243044", fontSize: 12, textTransform: "uppercase" }}>{h}</th>)}
             </tr>
           </thead>
           <tbody>
-            {filteredLength === 0 && <tr><td colSpan={canAdjust ? 11 : 10} style={{ padding: 20, color: "#94a3b8" }}>No items found.</td></tr>}
+            {filteredLength === 0 && <tr><td colSpan={canAdjust ? 10 : 9} style={{ padding: 20, color: "#9ca3af" }}>No items found.</td></tr>}
             {pagedCards.map((c) => (
-              <tr key={c.id} style={{ borderBottom: "1px solid #1e293b" }}>
-                {canAdjust && <td style={{ padding: 10 }}><input type="checkbox" checked={bulkSelected.includes(c.id)} onChange={(e) => setBulkSelected((prev) => e.target.checked ? [...new Set([...prev, c.id])] : prev.filter((id) => id !== c.id))} /></td>}
-                <td style={{ padding: 10 }}>{c.front_image ? <img loading="lazy" src={c.front_image} alt="front" style={{ width: 46, height: 64, objectFit: "cover", borderRadius: 8 }} /> : <div style={{ width: 46, height: 64, borderRadius: 8, background: "#020617" }} />}</td>
-                <td style={{ padding: 10, fontWeight: 800 }}>{c.inventory_id || "N/A"}</td>
-                <td style={{ padding: 10 }}>{c.name}</td>
-                <td style={{ padding: 10, color: "#94a3b8" }}>{c.card_number || "N/A"}</td>
-                <td style={{ padding: 10 }}>{c.quantity || 0}</td>
-                <td style={{ padding: 10 }}>{money(c.cost)}</td>
-                <td style={{ padding: 10 }}>{money(Number(c.price || 0) > 0 ? c.price : Number(c.cost || 0) * 1.3)}</td>
+              <tr key={c.id} style={{ borderBottom: "1px solid #243044" }}>
+                {canAdjust && <td style={{ padding: 10, width: 48 }}><input type="checkbox" checked={bulkSelected.includes(c.id)} onChange={(e) => setBulkSelected((prev) => e.target.checked ? [...new Set([...prev, c.id])] : prev.filter((id) => id !== c.id))} /></td>}
+                <td style={{ padding: 10, width: 64 }}>{c.front_image ? <img loading="lazy" src={c.front_image} alt="front" style={{ width: 42, height: 58, objectFit: "cover", borderRadius: 6 }} /> : <div style={{ width: 42, height: 58, borderRadius: 6, background: "#0b1220" }} />}</td>
+                <td style={{ padding: 10, fontWeight: 800, whiteSpace: "nowrap" }}>{c.inventory_id || "N/A"}</td>
+                <td style={{ padding: 10, minWidth: 230 }}>
+                  <div style={{ fontWeight: 800 }}>{c.name}</div>
+                  <div style={{ ...styles.muted, marginTop: 3 }}>{c.category || "N/A"} · {c.game || "N/A"} · {c.language || "N/A"} · {c.card_number || "N/A"}</div>
+                </td>
+                <td style={{ padding: 10, textAlign: "right", fontWeight: 800 }}>{c.quantity || 0}</td>
+                <td style={{ padding: 10, textAlign: "right" }}>{money(c.cost)}</td>
+                <td style={{ padding: 10, textAlign: "right", fontWeight: 800 }}>{money(Number(c.price || 0) > 0 ? c.price : Number(c.cost || 0) * 1.3)}</td>
                 <td style={{ padding: 10 }}>{c.storage_location || "N/A"}</td>
                 <td style={{ padding: 10 }}><StatusBadgeComp status={c.status} /></td>
                 <td style={{ padding: 10 }}><ActionButtonsComp card={c} /></td>
@@ -63,7 +66,7 @@ function MobileInventoryCards({ pagedCards, filteredLength, canAdjust, bulkSelec
             <div style={{ flex: 1 }}>
               <div style={{ ...styles.muted, fontWeight: 800 }}>{c.inventory_id || "N/A"}</div>
               <h3 style={{ margin: "6px 0" }}>{c.name}</h3>
-              <div style={styles.muted}>{c.card_number || "N/A"}</div>
+              <div style={styles.muted}>{c.game || "N/A"} · {c.card_number || "N/A"}</div>
               <div style={{ marginTop: 8 }}><StatusBadgeComp status={c.status} /></div>
             </div>
           </div>
@@ -85,6 +88,15 @@ export default function InventoryView({
   styles,
   search,
   onSearchChange,
+  categoryFilter,
+  setCategoryFilter,
+  gameFilter,
+  setGameFilter,
+  statusFilter,
+  setStatusFilter,
+  locationFilter,
+  setLocationFilter,
+  locationOptions,
   canAdjust,
   bulkSelected,
   setBulkSelected,
@@ -107,17 +119,71 @@ export default function InventoryView({
   };
 
   const ActionButtonsComp = ({ card }) => <ActionButtons card={card} {...actionProps} />;
+  const hasFilters = search || categoryFilter !== "ALL" || gameFilter !== "ALL" || statusFilter !== "ALL" || locationFilter !== "ALL";
+  const clearFilters = () => {
+    onSearchChange({ target: { value: "" } });
+    setCategoryFilter("ALL");
+    setGameFilter("ALL");
+    setStatusFilter("ALL");
+    setLocationFilter("ALL");
+  };
 
   return (
     <>
       <DashboardCards stats={stats} isMobile={isMobile} styles={styles} />
       <div style={{ ...styles.card, marginBottom: 16 }}>
-        <SearchInput
-          placeholder="Search inventory ID, name, category, SKU / card #, location, status..."
-          value={search}
-          onChange={onSearchChange}
-          styles={styles}
-        />
+        <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "2fr repeat(4, 1fr) auto", gap: 10, alignItems: "end" }}>
+          <label>
+            <div style={{ ...styles.muted, marginBottom: 6, fontWeight: 800 }}>Search Inventory</div>
+            <SearchInput
+              placeholder="Inventory ID, name, game, SKU, location, status..."
+              value={search}
+              onChange={onSearchChange}
+              styles={styles}
+            />
+          </label>
+          <label>
+            <div style={{ ...styles.muted, marginBottom: 6, fontWeight: 800 }}>Category</div>
+            <select value={categoryFilter} onChange={(e) => setCategoryFilter(e.target.value)} style={{ ...styles.input, marginBottom: 0 }}>
+              <option value="ALL">All Categories</option>
+              {ITEM_CATEGORIES.map((category) => (
+                <option key={category} value={category}>{category}</option>
+              ))}
+            </select>
+          </label>
+          <label>
+            <div style={{ ...styles.muted, marginBottom: 6, fontWeight: 800 }}>Game</div>
+            <select value={gameFilter} onChange={(e) => setGameFilter(e.target.value)} style={{ ...styles.input, marginBottom: 0 }}>
+              <option value="ALL">All Games</option>
+              {GAME_OPTIONS.map((game) => (
+                <option key={game} value={game}>{game}</option>
+              ))}
+            </select>
+          </label>
+          <label>
+            <div style={{ ...styles.muted, marginBottom: 6, fontWeight: 800 }}>Status</div>
+            <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} style={{ ...styles.input, marginBottom: 0 }}>
+              <option value="ALL">All Statuses</option>
+              <option value={CARD_STATUS_AVAILABLE}>Available</option>
+              <option value="Hold">Hold</option>
+              <option value={CARD_STATUS_SOLD}>Sold</option>
+              <option value="Others">Others</option>
+            </select>
+          </label>
+          <label>
+            <div style={{ ...styles.muted, marginBottom: 6, fontWeight: 800 }}>Location</div>
+            <select value={locationFilter} onChange={(e) => setLocationFilter(e.target.value)} style={{ ...styles.input, marginBottom: 0 }}>
+              <option value="ALL">All Locations</option>
+              {locationOptions.map((location) => (
+                <option key={location} value={location}>{location}</option>
+              ))}
+            </select>
+          </label>
+          <button type="button" disabled={!hasFilters} onClick={clearFilters} style={{ ...styles.button, opacity: hasFilters ? 1 : 0.45, cursor: hasFilters ? "pointer" : "not-allowed" }}>
+            Clear
+          </button>
+        </div>
+        <div style={{ ...styles.muted, marginTop: 10 }}>{filteredLength} item(s) shown</div>
       </div>
       {canAdjust && (
         <div style={{ ...styles.card, marginBottom: 16, display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
