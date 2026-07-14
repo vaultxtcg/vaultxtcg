@@ -9,6 +9,23 @@ function Field({ label, children, styles }) {
   );
 }
 
+const imageAccept = "image/*,.jpg,.jpeg,.png,.webp,.heic,.heif";
+
+function ImageFilePicker({ label, file, onFile, styles }) {
+  const handleFile = (event) => {
+    const selectedFile = event.currentTarget.files?.[0];
+    if (selectedFile) onFile(selectedFile);
+    event.currentTarget.value = "";
+  };
+
+  return (
+    <Field label={label} styles={styles}>
+      <input type="file" accept={imageAccept} onChange={handleFile} onInput={handleFile} />
+      <div style={{ ...styles.muted, marginTop: 6 }}>{file?.name || "No file selected"}</div>
+    </Field>
+  );
+}
+
 export default function QuickAddCardView({
   form,
   setForm,
@@ -17,6 +34,8 @@ export default function QuickAddCardView({
   saving,
   handleCostChange,
   setPriceManuallyEdited,
+  frontFile,
+  backFile,
   setFrontFile,
   setBackFile,
   cancelEdit,
@@ -133,12 +152,8 @@ export default function QuickAddCardView({
           <h4 style={{ marginTop: 0 }}>Photos</h4>
           <div style={{ ...styles.muted, marginBottom: 10 }}>Use clear front and back photos for faster identification.</div>
           <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 10 }}>
-            <Field label="Front Image" styles={styles}>
-              <input type="file" accept="image/*" onChange={(e) => setFrontFile(e.target.files[0])} />
-            </Field>
-            <Field label="Back Image" styles={styles}>
-              <input type="file" accept="image/*" onChange={(e) => setBackFile(e.target.files[0])} />
-            </Field>
+            <ImageFilePicker label="Front Image" file={frontFile} onFile={setFrontFile} styles={styles} />
+            <ImageFilePicker label="Back Image" file={backFile} onFile={setBackFile} styles={styles} />
           </div>
         </div>
       </FormSection>
